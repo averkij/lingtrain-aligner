@@ -26,8 +26,8 @@ class SentenceTransformersModel():
                 'distiluse-base-multilingual-cased-v2')
         return _model
 
-    def embed(self, lines):
-        vecs = self.model.encode(lines)
+    def embed(self, lines, batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
         return vecs
 
 
@@ -46,8 +46,8 @@ class SentenceTransformersModelXlm100():
                 'xlm-r-100langs-bert-base-nli-mean-tokens')
         return _model
 
-    def embed(self, lines):
-        vecs = self.model.encode(lines)
+    def embed(self, lines, batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
         return vecs
 
 
@@ -64,11 +64,22 @@ class SentenceTransformersModelLaBSE():
             _model = SentenceTransformer('LaBSE')
         return _model
 
-    def embed(self, lines):
-        vecs = self.model.encode(lines)
+    def embed(self, lines, batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
         return vecs
 
 
 sentence_transformers_model = SentenceTransformersModel()
 sentence_transformers_model_xlm_100 = SentenceTransformersModelXlm100()
 sentence_transformers_model_labse = SentenceTransformersModelLaBSE()
+
+
+# print(os.getcwd())
+
+# _model = SentenceTransformer('distiluse-base-multilingual-cased-v2')
+# with open('distiluse-base-multilingual-cased-v5.bin', 'wb') as handle:
+#     pickle.dump(_model, handle)
+
+
+# _model = pickle.load(open("F:\git\lingtrain-aligner-editor\be\models\distiluse-base-multilingual-cased-v2", 'rb'))
+# torch.save(_model.state_dict(), 'distiluse-base-multilingual-cased-v4.bin')
