@@ -141,8 +141,6 @@ def get_variants(conflict, show_logs=False):
             ids_from) if len(x) == groups]
         for i, sub in enumerate(grouped_subs):
             res.append([(tuple(a), (b,)) for a, b in zip(sub, ids_to)])
-
-    # print(grouped_subs)
     return res
 
 
@@ -260,7 +258,8 @@ def get_all_conflicts(db_path, min_chain_length=3, max_conflicts_len=6, batch_id
 def resolve_all_conflicts(db_path, conflicts, model_name, show_logs=False):
     """Apply all the solutions to the database"""
     for i, conflict in enumerate(conflicts[::-1]):
-        print(i)
+        total_len = len(conflicts)
+        print(f"resolving: {i}/{total_len}")
         solution, lines_from, lines_to = squash_conflict(
             db_path, conflict, model_name, show_logs)
         resolve_conflict(db_path, conflict, solution,

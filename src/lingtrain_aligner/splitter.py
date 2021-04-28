@@ -7,6 +7,8 @@ import re
 # import constants as con
 import razdel
 
+from lingtrain_aligner import preprocessor
+
 RU_CODE = "ru"
 ZH_CODE = "zh"
 DE_CODE = "de"
@@ -22,9 +24,6 @@ CZ_CODE = "cz"
 JP_CODE = "jp"
 LANGUAGES = [RU_CODE, ZH_CODE, DE_CODE, EN_CODE, FR_CODE,
              IT_CODE, TR_CODE, ES_CODE, PL_CODE, PT_CODE, HU_CODE, CZ_CODE, JP_CODE]
-
-PARAGRAPH_MARK = "%%%%%"
-LINE_ENDINGS = [".","!","?",";",":","。"]
 
 # pattern_ru_orig = re.compile(r'[a-zA-Z\(\)\[\]\/\<\>•\'\n]+')
 pattern_ru_orig = re.compile(r'[\(\)\[\]\/\<\>•\'\n]+')
@@ -77,12 +76,34 @@ def preprocess(line, re_list, splitter):
     return splitter(line)
 
 
-def split_by_sentences(lines, langcode, add_paragraph_mark=False):
-    """Split line by sentences using language specific rules"""
-    if add_paragraph_mark:
-        line = detect_paragraphs_and_join(lines, langcode)
+def ensure_paragraph_splitting(lines):
+    """Split line by the paragraph marks if splitter failed"""
+    line_endings = [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
+    res = []
+    for line in lines:
+        ser = []
+        get_substrings(line, '', line_endings, ser)
+        res.extend(ser)
+    return res
+
+
+def get_substrings(line, sep, endings, res):
+    match = next((x for x in endings if x in line), False)
+    if match:
+        parts = line.partition(match)
+        get_substrings(parts[0], parts[1], endings, res)
+        get_substrings(parts[2], sep, endings, res)
     else:
-        line = ' '.join(lines)
+        if line: res.append(line + sep)
+
+
+def split_by_sentences_wrapper(lines, langcode):
+    sentences = ensure_paragraph_splitting(split_by_sentences(lines, langcode))
+    return sentences
+
+def split_by_sentences(lines, langcode):
+    """Split line by sentences using language specific rules"""
+    line = ' '.join(lines)
     if langcode == RU_CODE:
         sentences = preprocess(line, [
             (pattern_ru_orig, ''),
@@ -124,21 +145,13 @@ def split_by_sentences(lines, langcode, add_paragraph_mark=False):
     return sentences
 
 
-def detect_paragraphs_and_join(lines, langcode):
-    line_endings = tuple([x + "\n" for x in LINE_ENDINGS])
-    for i, line in enumerate(lines):
-        if line.endswith(line_endings):
-            lines[i] = line[:-2] + PARAGRAPH_MARK + line[-2:-1]
-    return ' '.join(lines)
-
-
-def split_by_sentences_and_save(raw_path, splitted_path, filename, langcode, username, add_paragraph_mark=False):
+def split_by_sentences_and_save(raw_path, splitted_path, filename, langcode, username):
     """Split raw text file by sentences and save"""
 
     with open(raw_path, mode='r', encoding='utf-8') as input_file, open(splitted_path, mode='w', encoding='utf-8') as out_file:
         if is_lang_code_valid(langcode):
             sentences = split_by_sentences(
-                input_file.readlines(), langcode, add_paragraph_mark)
+                input_file.readlines(), langcode)
         else:
             raise Exception("Unknown language code.")
 
