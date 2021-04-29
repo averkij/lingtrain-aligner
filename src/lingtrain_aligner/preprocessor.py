@@ -13,6 +13,7 @@ PASS = "pass"
 
 PARAGRAPH = "paragraph"
 H1, H2, H3, H4, H5 = "h1","h2","h3","h4","h5"
+DIVIDER = "divider"
 
 PARAGRAPH_MARK = "%%%%%"
 LINE_ENDINGS = [".","!","?",";",":","。"]
@@ -26,8 +27,11 @@ roman_nums = re.compile("^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})
 page_number_pat = re.compile(r"^-\d+-$")
 headings_inline = re.compile(r"^\d+\s+.*$")
 
+misc_pat = re.compile(r"^x x x*$")
+
 #year range
 years_range = re.compile(r"^15\d\d|16\d\d|17\d\d|18\d\d|19\d\d|20\d\d$")
+
 
 def clean_artifacts(text, config=None, act=True):
     lines = []
@@ -54,18 +58,25 @@ def clean_artifacts(text, config=None, act=True):
             print("[arabic]:", line)
             if act and config["arabic"] == DELETE: line = ''
 
+        if line and re.match(misc_pat, line):
+            print("[misc]:", line)
+            if act and config["misc"] == DELETE: line = ''
+
         if line: lines.append(line.strip())
 
     return lines
 
+
 def find_artifacts(path):
     foo = clean_artifacts(path, act=False)
+
 
 def mark_heading(line, action):
     if action == DELETE: return ''
     if action == PASS: return line
     marked = f"{line}{PARAGRAPH_MARK}{action}."
     return marked
+
 
 def mark_headings(text, config=None, act=True):
     lines = []
@@ -99,6 +110,11 @@ def mark_headings(text, config=None, act=True):
                 print("[date]:", line)
                 end_prev = True
                 if act: line = mark_heading(line, config["date"])
+
+        if line and re.match(misc_pat, line):
+            print("[misc]:", line)
+            end_prev = True
+            if act: line = mark_heading(line, config["misc"])
         
         if line:
             if end_prev and len(lines)>0:
@@ -109,12 +125,15 @@ def mark_headings(text, config=None, act=True):
             lines.append(line)
     return lines
 
+
 def find_headings(text):
     foo = mark_headings(text, act=False)
+
 
 def is_date(line):
     res = dateparser.parse(line, languages=['ru','en','fr','it','de','zh'])
     return False if not res else True
+
 
 def mark_paragraphs(lines):
     line_endings = tuple([x for x in LINE_ENDINGS])

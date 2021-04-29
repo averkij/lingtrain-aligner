@@ -12,9 +12,9 @@ from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor
 from scipy import spatial
 
 
-def get_line_vectors(lines, model_name):
+def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
     """Calculate embedding of the string"""
-    return model_dispatcher.models[model_name].embed(lines)
+    return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
 
 
 def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path=""):
@@ -22,8 +22,8 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
 
-    vectors1 = [*get_line_vectors(lines_from_batch, model_name)]
-    vectors2 = [*get_line_vectors(lines_to_batch, model_name)]
+    vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
+    vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}.")
@@ -237,9 +237,9 @@ def init_document_db(db_path):
         os.remove(db_path)
     with sqlite3.connect(db_path) as db:
         db.execute(
-            'create table splitted_from(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer)')
+            'create table splitted_from(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)')
         db.execute(
-            'create table splitted_to(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer)')
+            'create table splitted_to(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)')
         db.execute(
             'create table processing_from(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)')
         db.execute(
@@ -269,8 +269,8 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         else:
             data = zip(lines, ['' for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5) values (?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5]) for text, proxy in data])
+            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
 
     if os.path.isfile(splitted_to):
         with open(splitted_to, mode="r", encoding="utf-8") as input_path:
@@ -285,8 +285,8 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         else:
             data = zip(lines, ['' for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5) values (?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5]) for text, proxy in data])
+            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
 
 
 def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
@@ -301,8 +301,8 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         else:
             data = zip(splitted_from, ['' for _ in range(len(splitted_from))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5) values (?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5]) for text, proxy in data])
+            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
     if len(splitted_to) > 0:
         splitted_to = handle_marks(splitted_to)
         if len(splitted_to) == len(proxy_to):
@@ -310,8 +310,8 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         else:
             data = zip(splitted_to, ['' for _ in range(len(splitted_to))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5) values (?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5]) for text, proxy in data])
+            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
 
 
 def handle_marks(lines):
@@ -319,36 +319,39 @@ def handle_marks(lines):
     marks_counter = defaultdict(int)
     marks = (0,0,0,0,0,0)
 
-    p_endings = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
-    h1_endings = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H1}."
-    h2_endings = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H2}."
-    h3_endings = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H3}."
-    h4_endings = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H4}."
-    h5_endings = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H5}."
+    p_ending = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
+    h1_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H1}."
+    h2_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H2}."
+    h3_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H3}."
+    h4_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H4}."
+    h5_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H5}."
+    divider_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.DIVIDER}."
 
     for line in lines:
         next_par = False
         line = line.strip()
         
-        if line.endswith(p_endings):
+        if line.endswith(p_ending):
             #remove last occurence of PARAGRAPH_MARK
             line = ''.join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
             next_par = True
         
-        if line.endswith(h1_endings): marks_counter[preprocessor.H1] += 1
-        if line.endswith(h2_endings): marks_counter[preprocessor.H2] += 1
-        if line.endswith(h3_endings): marks_counter[preprocessor.H3] += 1
-        if line.endswith(h4_endings): marks_counter[preprocessor.H4] += 1
-        if line.endswith(h5_endings): marks_counter[preprocessor.H5] += 1
+        if line.endswith(h1_ending): marks_counter[preprocessor.H1] += 1
+        if line.endswith(h2_ending): marks_counter[preprocessor.H2] += 1
+        if line.endswith(h3_ending): marks_counter[preprocessor.H3] += 1
+        if line.endswith(h4_ending): marks_counter[preprocessor.H4] += 1
+        if line.endswith(h5_ending): marks_counter[preprocessor.H5] += 1
+        if line.endswith(divider_ending): marks_counter[preprocessor.DIVIDER] += 1
         
-        if not line.endswith((h1_endings, h2_endings, h3_endings, h4_endings, h5_endings)):
+        if not line.endswith((h1_ending, h2_ending, h3_ending, h4_ending, h5_ending, divider_ending)):
             marks = (
                 marks_counter[preprocessor.PARAGRAPH],
                 marks_counter[preprocessor.H1],
                 marks_counter[preprocessor.H2],
                 marks_counter[preprocessor.H3],
                 marks_counter[preprocessor.H4],
-                marks_counter[preprocessor.H5])
+                marks_counter[preprocessor.H5],
+                marks_counter[preprocessor.DIVIDER])
             res.append((line, marks))
             
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1

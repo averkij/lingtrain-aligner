@@ -95,11 +95,12 @@ def get_substrings(line, sep, endings, res):
         get_substrings(parts[2], sep, endings, res)
     else:
         if line: res.append(line + sep)
-
+        
 
 def split_by_sentences_wrapper(lines, langcode):
     sentences = ensure_paragraph_splitting(split_by_sentences(lines, langcode))
     return sentences
+
 
 def split_by_sentences(lines, langcode):
     """Split line by sentences using language specific rules"""

@@ -105,10 +105,10 @@ def get_splitted_from_by_id(db_path, ids):
     """Get lines from splitted_from by ids"""
     res = []
     with sqlite3.connect(db_path) as db:
-        for id, text_from, proxy_from, exclude, paragraph in db.execute(
-            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
+        for id, text_from, proxy_from, exclude, paragraph, h1, h2, h3, h4, h5, divider in db.execute(
+            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
         ):
-            res.append((id, text_from, proxy_from, exclude, paragraph))
+            res.append((id, text_from, proxy_from, exclude, paragraph, h1, h2, h3, h4, h5, divider))
     return res
 
 
@@ -116,10 +116,10 @@ def get_splitted_to_by_id(db_path, ids):
     """Get lines from splitted_to by ids"""
     res = []
     with sqlite3.connect(db_path) as db:
-        for id, text_to, proxy_to, exclude, paragraph in db.execute(
-            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
+        for id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider in db.execute(
+            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
-            res.append((id, text_to, proxy_to, exclude, paragraph))
+            res.append((id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider))
     return res
 
 
@@ -187,7 +187,7 @@ def get_paragraph_dict(items):
     """Get paragraphs info as dict"""
     res = dict()
     for item in items:
-        res[item[0]] = item[4]
+        res[item[0]] = (item[4], item[5], item[6], item[7], item[8], item[9], item[10])
     return res
 
 
