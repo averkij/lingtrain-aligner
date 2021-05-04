@@ -222,6 +222,27 @@ def get_doc_items(index_items, db_path):
     return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
 
 
+def get_meta(db_path, direction):
+    """Get book meta information"""
+    direction = "from" if direction=="from" else "to"
+    with sqlite3.connect(db_path) as db:
+        author = db.execute(
+            f'select m.val from meta m where m.key="author_{direction}"').fetchone()[0]
+        title = db.execute(
+            f'select m.val from meta m where m.key="title_{direction}"').fetchone()[0]
+    return (author, title)
+
+
+def get_meta_from(db_path):
+    """Get book meta information 'from'"""
+    return get_meta(db_path, "from")
+
+
+def get_meta_to(db_path):
+    """Get book meta information 'to'"""
+    return get_meta(db_path, "to")
+
+
 def get_processing_from(db_path):
     """Get lines from processing_from"""
     with sqlite3.connect(db_path) as db:

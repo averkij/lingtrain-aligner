@@ -6,6 +6,7 @@ import re
 import dateutil.parser as date_parser
 import dateparser
 
+
 #preprocessing cleaning operations
 DELETE = "delete"
 SPLIT = "split"
@@ -14,9 +15,11 @@ PASS = "pass"
 PARAGRAPH = "paragraph"
 H1, H2, H3, H4, H5 = "h1","h2","h3","h4","h5"
 DIVIDER = "divider"
+TITLE = "title"
+AUTHOR = "author"
 
 PARAGRAPH_MARK = "%%%%%"
-LINE_ENDINGS = [".","!","?",";",":","。"]
+LINE_ENDINGS = [".","!","?",";",":","。","？","！"] #”
 
 headings_1 = re.compile(r"^часть .*$|^.* band$|^capitolo .*$", re.IGNORECASE)
 headings_2 = re.compile(r"^глава .*$|^.* teil$", re.IGNORECASE)

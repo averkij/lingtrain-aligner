@@ -26,12 +26,14 @@ LANGUAGES = [RU_CODE, ZH_CODE, DE_CODE, EN_CODE, FR_CODE,
              IT_CODE, TR_CODE, ES_CODE, PL_CODE, PT_CODE, HU_CODE, CZ_CODE, JP_CODE]
 
 # pattern_ru_orig = re.compile(r'[a-zA-Z\(\)\[\]\/\<\>•\'\n]+')
-pattern_ru_orig = re.compile(r'[\(\)\[\]\/\<\>•\'\n]+')
+pattern_ru_orig = re.compile(r'[\/\<\>•\'\n]+')
 double_spaces = re.compile(r'[\s]+')
 double_commas = re.compile(r'[,]+')
 double_dash = re.compile(r'[-—]+')
 german_quotes = re.compile(r'[»«“„]+')
 pattern_zh = re.compile(
+    r'[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
+pattern_zh_total = re.compile(
     r'[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
 pattern_jp = re.compile(
     r'[“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
@@ -88,6 +90,7 @@ def ensure_paragraph_splitting(lines):
 
 
 def get_substrings(line, sep, endings, res):
+    """Get all parts using recursion"""
     match = next((x for x in endings if x in line), False)
     if match:
         parts = line.partition(match)
@@ -95,14 +98,15 @@ def get_substrings(line, sep, endings, res):
         get_substrings(parts[2], sep, endings, res)
     else:
         if line: res.append(line + sep)
-        
 
-def split_by_sentences_wrapper(lines, langcode):
-    sentences = ensure_paragraph_splitting(split_by_sentences(lines, langcode))
+
+def split_by_sentences_wrapper(lines, langcode, leave_marks=False):
+    """Special wrapper with an additional paragraph splitting"""
+    sentences = ensure_paragraph_splitting(split_by_sentences(lines, langcode, leave_marks))
     return sentences
 
 
-def split_by_sentences(lines, langcode):
+def split_by_sentences(lines, langcode, leave_marks=False):
     """Split line by sentences using language specific rules"""
     line = ' '.join(lines)
     if langcode == RU_CODE:
@@ -119,10 +123,16 @@ def split_by_sentences(lines, langcode):
         ],
             split_by_razdel)
         return sentences
-    if langcode == ZH_CODE:
+    if langcode == ZH_CODE and leave_marks:
+        sentences = preprocess(line, [
+            (pattern_zh, '')
+        ],
+            split_zh)
+        return sentences
+    if langcode == ZH_CODE and not leave_marks:
         sentences = preprocess(line, [
             (pat_comma, '。'),
-            (pattern_zh, '')
+            (pattern_zh_total, '')
         ],
             split_zh)
         return sentences
