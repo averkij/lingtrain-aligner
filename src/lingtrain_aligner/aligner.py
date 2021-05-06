@@ -353,7 +353,6 @@ def handle_marks(lines):
             
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
 
-    print(res[0])
     return res, meta
 
 

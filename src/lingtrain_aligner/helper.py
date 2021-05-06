@@ -222,6 +222,15 @@ def get_doc_items(index_items, db_path):
     return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
 
 
+def get_meta_dict(db_path):
+    """Get all the meta information as dict"""
+    res = defaultdict(list)
+    with sqlite3.connect(db_path) as db:
+        for key, val in db.execute(f'select m.key, m.val from meta m'):
+            res[key].append(val)
+    return res
+
+
 def get_meta(db_path, mark, direction, occurence):
     """Get book meta information"""
     direction = "from" if direction=="from" else "to"

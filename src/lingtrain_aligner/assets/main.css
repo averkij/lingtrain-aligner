@@ -1,0 +1,46 @@
+.par {
+    font-size: 20px;
+    font-family: 'Noto Serif', serif;
+    padding: 30px 60px 0 60px;
+    text-indent: 30px;
+}
+
+.cont {
+    margin: 0 150px;
+}
+
+.dt {
+    display: table;
+}
+
+.dt-row {
+    display: table-row;
+}
+
+.dt-cell {
+    display: table-cell;
+}
+
+.dt-cell-colspan {
+    display: table-caption;
+}
+
+.divider {
+    padding-top: 30px;
+    vertical-align:middle;
+    text-align:center;
+}
+
+.divider-img {
+    width: 100px;
+}
+
+.flag-img {
+    height: 50px;
+    width: 50px;
+    padding: 0 10px 0 0;
+}
+
+.inline {
+    display: inline-block;
+}
