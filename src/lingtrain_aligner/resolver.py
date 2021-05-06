@@ -13,6 +13,7 @@ from lingtrain_aligner import aligner, helper
 from matplotlib import pyplot as plt
 from scipy import spatial
 from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 
 
 def prepare_index(db_path, batch_id=-1):
@@ -257,9 +258,9 @@ def get_all_conflicts(db_path, min_chain_length=3, max_conflicts_len=6, batch_id
 
 def resolve_all_conflicts(db_path, conflicts, model_name, show_logs=False):
     """Apply all the solutions to the database"""
-    for i, conflict in enumerate(conflicts[::-1]):
+    for i, conflict in enumerate(tqdm(conflicts[::-1])):
         total_len = len(conflicts)
-        print(f"resolving: {i}/{total_len}")
+        # print(f"resolving: {i+1}/{total_len}")
         solution, lines_from, lines_to = squash_conflict(
             db_path, conflict, model_name, show_logs)
         resolve_conflict(db_path, conflict, solution,
