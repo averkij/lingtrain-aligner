@@ -249,7 +249,7 @@ def init_document_db(db_path):
         db.execute(
             'create table batches(id integer primary key, batch_id integer unique, insert_ts text)')
         db.execute(
-            'create table meta(id integer primary key, key text, val text)')
+            'create table meta(id integer primary key, key text, val text, occurence integer)')
 
 
 def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to):
@@ -261,7 +261,7 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
     if os.path.isfile(splitted_from):
         with open(splitted_from, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, author, title = handle_marks(lines)
+        lines, meta = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_from):
             with open(proxy_from, mode="r", encoding="utf-8") as input_path:
@@ -273,13 +273,12 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.execute("insert into meta(key, val) values(?,?)", ("author_from", author))
-            db.execute("insert into meta(key, val) values(?,?)", ("title_from", title))
+            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "from"))
 
     if os.path.isfile(splitted_to):
         with open(splitted_to, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, author, title = handle_marks(lines)
+        lines, meta = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_to):
             with open(proxy_to, mode="r", encoding="utf-8") as input_path:
@@ -291,8 +290,7 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.execute("insert into meta(key, val) values(?,?)", ("author_to", author))
-            db.execute("insert into meta(key, val) values(?,?)", ("title_to", title))
+            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "to"))
 
 
 def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
@@ -301,7 +299,7 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         logging.info(f"Initializing database {db_path}")
         init_document_db(db_path)
     if len(splitted_from) > 0:
-        splitted_from, author, title = handle_marks(splitted_from)
+        splitted_from, meta = handle_marks(splitted_from)
         if len(splitted_from) == len(proxy_from):
             data = zip(splitted_from, proxy_from)
         else:
@@ -309,10 +307,9 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.execute("insert into meta(key, val) values(?,?)", ("author_from", author))
-            db.execute("insert into meta(key, val) values(?,?)", ("title_from", title))
+            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "from"))
     if len(splitted_to) > 0:
-        splitted_to, author, title = handle_marks(splitted_to)
+        splitted_to, meta = handle_marks(splitted_to)
         if len(splitted_to) == len(proxy_to):
             data = zip(splitted_to, proxy_to)
         else:
@@ -320,24 +317,14 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.execute("insert into meta(key, val) values(?,?)", ("author_to", author))
-            db.execute("insert into meta(key, val) values(?,?)", ("title_to", title))
+            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "to"))
 
 def handle_marks(lines):
     res = []
     marks_counter = defaultdict(int)
+    meta = defaultdict(list)
     marks = (0,0,0,0,0,0)
-    author, title = '',''
-
     p_ending = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
-    h1_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H1}."
-    h2_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H2}."
-    h3_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H3}."
-    h4_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H4}."
-    h5_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.H5}."
-    divider_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.DIVIDER}."
-    author_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.AUTHOR}."
-    title_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.TITLE}."
 
     for line in lines:
         next_par = False
@@ -348,19 +335,12 @@ def handle_marks(lines):
             line = ''.join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
             next_par = True
         
-        if line.endswith(h1_ending): marks_counter[preprocessor.H1] += 1
-        if line.endswith(h2_ending): marks_counter[preprocessor.H2] += 1
-        if line.endswith(h3_ending): marks_counter[preprocessor.H3] += 1
-        if line.endswith(h4_ending): marks_counter[preprocessor.H4] += 1
-        if line.endswith(h5_ending): marks_counter[preprocessor.H5] += 1
-        if line.endswith(divider_ending): marks_counter[preprocessor.DIVIDER] += 1
+        for mark in preprocessor.MARK_COUNTERS:
+            update_mark_counter(marks_counter, line, mark)
 
-        if line.endswith(author_ending):
-            author = line[:len(line)-len(author_ending)]
-        if line.endswith(title_ending):
-            title = line[:len(line)-len(title_ending)]
+        update_meta(meta, line)
                 
-        if not line.endswith((h1_ending, h2_ending, h3_ending, h4_ending, h5_ending, divider_ending, author_ending, title_ending)):
+        if not line.endswith(get_all_extraction_endings()):
             marks = (
                 marks_counter[preprocessor.PARAGRAPH],
                 marks_counter[preprocessor.H1],
@@ -374,4 +354,36 @@ def handle_marks(lines):
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
 
     print(res[0])
-    return res, author, title
+    return res, meta
+
+
+def update_mark_counter(marks_counter, line, mark):
+    ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
+    if line.endswith(ending):
+        marks_counter[mark] += 1
+
+
+def get_mark_value(line, mark):
+    res = ''
+    ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
+    if line.endswith(ending):
+        res = line[:len(line)-len(ending)]
+    return res
+
+def get_all_extraction_endings():
+    return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META])
+
+    
+def update_meta(meta, line):
+    for mark in preprocessor.MARK_META:
+        val = get_mark_value(line, mark)
+        if val:
+            meta[mark].append(val)
+
+def flatten_meta(meta, direction):
+    res = []
+    for key in meta:
+        for i, val in enumerate(meta[key]):
+            res.append((f"{key}_{direction}", val, i))
+    return res
+

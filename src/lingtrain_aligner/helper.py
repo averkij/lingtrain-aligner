@@ -222,25 +222,23 @@ def get_doc_items(index_items, db_path):
     return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
 
 
-def get_meta(db_path, direction):
+def get_meta(db_path, mark, direction, occurence):
     """Get book meta information"""
     direction = "from" if direction=="from" else "to"
     with sqlite3.connect(db_path) as db:
-        author = db.execute(
-            f'select m.val from meta m where m.key="author_{direction}"').fetchone()[0]
-        title = db.execute(
-            f'select m.val from meta m where m.key="title_{direction}"').fetchone()[0]
-    return (author, title)
+        res = db.execute(
+            f'select m.val from meta m where m.key="{mark}_{direction}" and occurence={occurence}').fetchone()
+    return res[0] if res else ''
 
 
-def get_meta_from(db_path):
+def get_meta_from(db_path, mark, occurence):
     """Get book meta information 'from'"""
-    return get_meta(db_path, "from")
+    return get_meta(db_path, mark, "from", occurence)
 
 
-def get_meta_to(db_path):
+def get_meta_to(db_path, mark, occurence):
     """Get book meta information 'to'"""
-    return get_meta(db_path, "to")
+    return get_meta(db_path, mark, "to", occurence)
 
 
 def get_processing_from(db_path):

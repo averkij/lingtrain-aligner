@@ -18,6 +18,9 @@ DIVIDER = "divider"
 TITLE = "title"
 AUTHOR = "author"
 
+MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER]
+MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR]
+
 PARAGRAPH_MARK = "%%%%%"
 LINE_ENDINGS = [".","!","?",";",":","。","？","！"] #”
 
