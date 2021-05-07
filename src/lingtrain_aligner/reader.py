@@ -83,21 +83,18 @@ def get_paragraphs(db_path):
 
 def create_book(paragraphs_from, paragraphs_to, meta, output_path, template):
     """Generate html"""
-    # ensure path is existed and copy styles
+    # ensure path is existed 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    styles_file = os.path.join(os.path.dirname(
-        lingtrain_aligner.__file__), "assets", "main.css")
-    copyfile(styles_file, os.path.join(
-        pathlib.Path(output_path).parent, "main.css"))
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
-        res_html.write("""
+        res_html.write(f"""
         <html><head>
             <link rel="stylesheet" href="main.css">
             <link rel="preconnect" href="https://fonts.gstatic.com">
             <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
             <title>Lingtrain Magic Book</title>
+            {CSS_TEMPLATE}
         </head>
         <body>""")
 
@@ -210,3 +207,53 @@ def get_meta_to(meta, mark, occurence=0):
     if len(meta[key]) > occurence:
         return meta[key][occurence]
     return ''
+
+
+CSS_TEMPLATE = """<style type="text/css">
+.par {
+    font-size: 20px;
+    font-family: 'Noto Serif', serif;
+    padding: 30px 60px 0 60px;
+    text-indent: 30px;
+}
+
+.cont {
+    margin: 0 150px;
+}
+
+.dt {
+    display: table;
+}
+
+.dt-row {
+    display: table-row;
+}
+
+.dt-cell {
+    display: table-cell;
+}
+
+.dt-cell-colspan {
+    display: table-caption;
+}
+
+.divider {
+    padding-top: 30px;
+    vertical-align:middle;
+    text-align:center;
+}
+
+.divider-img {
+    width: 100px;
+}
+
+.flag-img {
+    height: 50px;
+    width: 50px;
+    padding: 0 10px 0 0;
+}
+
+.inline {
+    display: inline-block;
+}
+</style>"""
