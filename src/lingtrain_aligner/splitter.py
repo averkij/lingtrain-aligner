@@ -22,14 +22,34 @@ PT_CODE = "pt"
 HU_CODE = "hu"
 CZ_CODE = "cz"
 JP_CODE = "jp"
-LANGUAGES = [RU_CODE, ZH_CODE, DE_CODE, EN_CODE, FR_CODE,
-             IT_CODE, TR_CODE, ES_CODE, PL_CODE, PT_CODE, HU_CODE, CZ_CODE, JP_CODE]
+BA_CODE = "ba"
+
+XX_CODE = "xx"
+
+LANGUAGES = {
+    RU_CODE: {"name": "Russian"},
+    ZH_CODE: {"name": "Chinese"},
+    DE_CODE: {"name": "German"},
+    EN_CODE: {"name": "English"},
+    FR_CODE: {"name": "French"},
+    IT_CODE: {"name": "Italian"},
+    TR_CODE: {"name": "Turkish"},
+    ES_CODE: {"name": "Spanish"},
+    PL_CODE: {"name": "Polish"},
+    PT_CODE: {"name": "Portugal"},
+    HU_CODE: {"name": "Hungarian"},
+    CZ_CODE: {"name": "Czech"},
+    JP_CODE: {"name": "Japanese"},
+    BA_CODE: {"name": "Bashkir"},
+
+    XX_CODE: {"name": "Unknown"}
+}
 
 # pattern_ru_orig = re.compile(r'[a-zA-Z\(\)\[\]\/\<\>•\'\n]+')
 pattern_ru_orig = re.compile(r'[\/\<\>•\'\n]+')
-double_spaces = re.compile(r'[\s]+')
-double_commas = re.compile(r'[,]+')
-double_dash = re.compile(r'[-—]+')
+double_spaces = re.compile(r'[\s]{2,}')
+double_commas = re.compile(r'[,]{2,}')
+double_dash = re.compile(r'[-—]{2,}')
 german_quotes = re.compile(r'[»«“„]+')
 pattern_zh = re.compile(
     r'[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
@@ -80,7 +100,8 @@ def preprocess(line, re_list, splitter):
 
 def ensure_paragraph_splitting(lines):
     """Split line by the paragraph marks if splitter failed"""
-    line_endings = [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
+    line_endings = [preprocessor.PARAGRAPH_MARK +
+                    x for x in preprocessor.LINE_ENDINGS]
     res = []
     for line in lines:
         ser = []
@@ -97,12 +118,14 @@ def get_substrings(line, sep, endings, res):
         get_substrings(parts[0], parts[1], endings, res)
         get_substrings(parts[2], sep, endings, res)
     else:
-        if line: res.append(line + sep)
+        if line:
+            res.append(line + sep)
 
 
 def split_by_sentences_wrapper(lines, langcode, leave_marks=False):
     """Special wrapper with an additional paragraph splitting"""
-    sentences = ensure_paragraph_splitting(split_by_sentences(lines, langcode, leave_marks))
+    sentences = ensure_paragraph_splitting(
+        split_by_sentences(lines, langcode, leave_marks))
     return sentences
 
 
@@ -173,3 +196,8 @@ def split_by_sentences_and_save(raw_path, splitted_path, filename, langcode, use
             else:
                 out_file.write(x.strip())
             count += 1
+
+
+def get_supported_languages():
+    """Get list of supported languages"""
+    return LANGUAGES
