@@ -50,7 +50,7 @@ def prepare_index(db_path, batch_id=-1):
     return res
 
 
-def get_good_chains(res, min_len=2):
+def get_good_chains(res, min_len=2, handle_start=False):
     """Calculate valid alignment chains"""
     curr_from = res[0]["from"][0]
     curr_to = res[0]["to"]
@@ -66,16 +66,14 @@ def get_good_chains(res, min_len=2):
             chain_from.append((val_from, res[i]["batch_id"], res[i]["sub_id"]))
             curr_to = val_to
             curr_from = val_from
-        elif len(chain_to) >= min_len:
-
-            # print("add chain:", chain_to)
-
+        elif len(chain_to) >= min_len or handle_start:
             chains_to.append(chain_to)
             chains_from.append(chain_from)
             chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
             chain_from = [(val_from, res[i]["batch_id"], res[i]["sub_id"])]
             curr_to = val_to
             curr_from = val_from
+            handle_start = False
         else:
 
             # print(">>:", chain_to)
@@ -265,6 +263,16 @@ def resolve_all_conflicts(db_path, conflicts, model_name, show_logs=False):
             db_path, conflict, model_name, show_logs)
         resolve_conflict(db_path, conflict, solution,
                          lines_from, lines_to, show_logs)
+
+
+def fix_start(db_path, model_name, max_conflicts_len=6, show_logs=False):
+    """Find the first conflict and resolve"""
+    prepared_index = prepare_index(db_path, 0)
+    chains_from, chains_to = get_good_chains(
+        prepared_index, min_len=2, handle_start=True)
+    conflicts_to_solve, _ = get_conflicts(
+        chains_from, chains_to, max_len=max_conflicts_len)
+    resolve_all_conflicts(db_path, conflicts_to_solve, model_name, show_logs)
 
 
 def get_vectors(unique_variants, splitted_from, splitted_to, model_name):
