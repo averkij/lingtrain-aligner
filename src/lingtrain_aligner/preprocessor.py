@@ -24,14 +24,14 @@ MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR]
 PARAGRAPH_MARK = "%%%%%"
 LINE_ENDINGS = [".","!","?",";",":","。","？","！"] #”
 
-headings_1 = re.compile(r"^часть .*$|^.* band$|^capitolo .*$", re.IGNORECASE)
+headings_1 = re.compile(r"^часть .*$|^.* band$|^part .*$|^DÍL .*$|^capitolo .*$", re.IGNORECASE)
 headings_2 = re.compile(r"^глава .*$|^.* teil$", re.IGNORECASE)
 
 arabic_nums = re.compile(r"^\d+$")
 roman_nums = re.compile("^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$")
 
 page_number_pat = re.compile(r"^-\d+-$")
-headings_inline = re.compile(r"^\d+\s+.*$")
+headings_inline = re.compile(r"^\d+\s+.*$|^\d+´.*$")
 
 misc_pat = re.compile(r"^x x x*$")
 
