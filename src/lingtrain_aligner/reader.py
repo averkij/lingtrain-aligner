@@ -13,8 +13,11 @@ H5_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H5
 DIVIDER_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.DIVIDER
 
 
-def get_paragraphs(db_path):
+def get_paragraphs(db_path, direction="from"):
     """Read all paragraphs with marks from database"""
+    #default direction is 'from'
+    if direction != "to": direction = "from"
+
     index = helper.get_flatten_doc_index(db_path)
     page = list(zip(index, range(len(index))))
 
@@ -35,33 +38,40 @@ def get_paragraphs(db_path):
     meta = helper.get_meta_dict(db_path)
 
     paragraphs_from, paragraphs_to = [], []
-    prev_meta = paragraphs_from_dict[json.loads(index[0][0][1])[0]]
+    if direction == "from":
+        prev_meta = paragraphs_from_dict[json.loads(index[0][0][1])[0]]
+    else:
+        prev_meta = paragraphs_to_dict[json.loads(index[0][0][3])[0]]
 
-    prev_paragraph_from = prev_meta[0]
+    prev_paragraph = prev_meta[0]
     prev_h1, prev_h2, prev_h3, prev_h4, prev_h5, prev_di = prev_meta[1], prev_meta[2], prev_meta[3], prev_meta[4], prev_meta[5], prev_meta[6]
 
     curr_from, curr_to = [data[0]["text_from"]], [data[0]["text_to"]]
 
     for item, texts in zip(index[1:], data[1:]):
         fid = max(json.loads(item[0][1]))
+        tid = max(json.loads(item[0][3]))
 
-        curr_paragraph_from = paragraphs_from_dict[fid][0]
+        if direction == "from":
+            curr_paragraph = paragraphs_from_dict[fid][0]
+        else:
+            curr_paragraph = paragraphs_to_dict[tid][0]
 
-        curr_h1 = paragraphs_from_dict[fid][1]
-        curr_h2 = paragraphs_from_dict[fid][2]
-        curr_h3 = paragraphs_from_dict[fid][3]
-        curr_h4 = paragraphs_from_dict[fid][4]
-        curr_h5 = paragraphs_from_dict[fid][5]
-        curr_di = paragraphs_from_dict[fid][6]
+        curr_h1 = paragraphs_from_dict[fid][1] if direction == "from" else paragraphs_to_dict[tid][1]
+        curr_h2 = paragraphs_from_dict[fid][2] if direction == "from"  else paragraphs_to_dict[tid][2]
+        curr_h3 = paragraphs_from_dict[fid][3] if direction == "from"  else paragraphs_to_dict[tid][3]
+        curr_h4 = paragraphs_from_dict[fid][4] if direction == "from"  else paragraphs_to_dict[tid][4]
+        curr_h5 = paragraphs_from_dict[fid][5] if direction == "from"  else paragraphs_to_dict[tid][5]
+        curr_di = paragraphs_from_dict[fid][6] if direction == "from"  else paragraphs_to_dict[tid][6]
 
-        if curr_paragraph_from == prev_paragraph_from:
+        if curr_paragraph == prev_paragraph:
             curr_from.append(texts["text_from"])
             curr_to.append(texts["text_to"])
         else:
             paragraphs_from.append(curr_from)
             paragraphs_to.append(curr_to)
 
-            prev_paragraph_from = curr_paragraph_from
+            prev_paragraph = curr_paragraph
             curr_from, curr_to = [texts["text_from"]], [texts["text_to"]]
 
         if curr_h1 != prev_h1:
@@ -104,8 +114,11 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
     """Generate html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    
-    if template == "custom":
+
+    if template in STYLES:
+        css = generate_css(STYLES[template])
+        sent_cycle = len(STYLES[template])
+    elif template == "custom" and styles:
         css = generate_css(styles)
         sent_cycle = len(styles)
     else:
@@ -343,3 +356,19 @@ h1, h2, h3, h4, h5 {
     padding: 0 6px;
 }
 """
+
+
+STYLES = {
+    "pastel_fill": [
+        '{"background": "#A2E4B8", "color": "black", "border-bottom": "0px solid red"}',
+        '{"background": "#FFC1CC", "color": "black"}',
+        '{"background": "#9BD3DD", "color": "black"}',
+        '{"background": "#FFFCC9", "color": "black"}'
+        ],
+    "pastel_start": [
+        '{"background": "linear-gradient(90deg, #A2E4B8 0px, #fff 150px)"}',
+        '{"background": "linear-gradient(90deg, #FFC1CC 0px, #fff 150px)"}',
+        '{"background": "linear-gradient(90deg, #9BD3DD 0px, #fff 150px)"}',
+        '{"background": "linear-gradient(90deg, #FFFCC9 0px, #fff 150px)"}'    
+        ]
+}
