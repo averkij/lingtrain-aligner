@@ -2,6 +2,8 @@
 
 ML powered library for the accurate texts alignment in different languages.
 
+![Dowload](/img/cover2.png)
+
 ## Purpose
 
 Main purpose of this alignment tool is to build parallel corpora using two or more raw texts in different languages. Texts should contain the same information (i.e., one text should be a translated analog oh the other text). E.g., it can be the _Drei Kameraden_ by Remqrque in German and the _Three Comrades_ — it's translation into English.
