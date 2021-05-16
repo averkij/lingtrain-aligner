@@ -2,7 +2,7 @@
 
 ML powered library for the accurate texts alignment in different languages.
 
-![Dowload](/img/cover2.png)
+![Cover](/img/cover.png)
 
 ## Purpose
 
