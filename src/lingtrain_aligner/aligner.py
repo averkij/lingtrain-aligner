@@ -60,12 +60,12 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     #     return [], []
 
 
-def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0):
     result = []
     task_list = [(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id)
                  for lines_from_batch, lines_to_batch,
                  line_ids_from, line_ids_to, batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids)]
+                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift)]
 
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
@@ -78,14 +78,14 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
     return result
 
 
-def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
     task_list = [(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id)
                  for lines_from_batch, lines_to_batch,
                  line_ids_from, line_ids_to, batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids)]
+                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift)]
 
     count = 0
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
@@ -95,9 +95,12 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
         result.append((batch_id, texts_from, texts_to))
         count += 1
 
+    if not result:
+        print("There are nothing to process")
+        return
+
     # sort by batch_id (will be useful with parallel processing)
     result.sort()
-
     save_db(db_path, result)
 
 
@@ -249,10 +252,12 @@ def init_document_db(db_path):
         db.execute(
             'create table batches(id integer primary key, batch_id integer unique, insert_ts text)')
         db.execute(
-            'create table meta(id integer primary key, key text, val text, occurence integer)')
+            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer)')
+        db.execute(
+            'create table languages(id integer primary key, key text, val text)')
 
 
-def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to):
+def fill_db_from_files(db_path, lang_from, lang_to, splitted_from, splitted_to, proxy_from, proxy_to):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
@@ -261,7 +266,7 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
     if os.path.isfile(splitted_from):
         with open(splitted_from, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, meta = handle_marks(lines)
+        lines, meta, meta_par_ids = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_from):
             with open(proxy_from, mode="r", encoding="utf-8") as input_path:
@@ -273,12 +278,11 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "from"))
-
+            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"from"))
     if os.path.isfile(splitted_to):
         with open(splitted_to, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, meta = handle_marks(lines)
+        lines, meta, meta_par_ids = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_to):
             with open(proxy_to, mode="r", encoding="utf-8") as input_path:
@@ -290,16 +294,18 @@ def fill_db_from_files(db_path, splitted_from, splitted_to, proxy_from, proxy_to
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "to"))
+            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"to"))
+    with sqlite3.connect(db_path) as db:
+        db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
 
 
-def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
+def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
         init_document_db(db_path)
     if len(splitted_from) > 0:
-        splitted_from, meta = handle_marks(splitted_from)
+        splitted_from, meta, meta_par_ids = handle_marks(splitted_from)
         if len(splitted_from) == len(proxy_from):
             data = zip(splitted_from, proxy_from)
         else:
@@ -307,9 +313,9 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "from"))
+            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "from"))
     if len(splitted_to) > 0:
-        splitted_to, meta = handle_marks(splitted_to)
+        splitted_to, meta, meta_par_ids = handle_marks(splitted_to)
         if len(splitted_to) == len(proxy_to):
             data = zip(splitted_to, proxy_to)
         else:
@@ -317,12 +323,44 @@ def fill_db(db_path, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[
         with sqlite3.connect(db_path) as db:
             db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence) values(?,?,?)", flatten_meta(meta, "to"))
+            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "to"))
+    with sqlite3.connect(db_path) as db:
+        db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
+
+
+def update_proxy_text(db_path, proxy_texts, ids, direction):
+    """Update proxy text"""
+    if not ids:
+        #try to write proxy_texts for all ids
+        ids = [x for x in range(1, len(proxy_texts)+1)]
+    if len(ids) != len(proxy_texts):
+        print("proxy_text and ids lengths are not equal. Provide correct ids.")
+        return
+    with sqlite3.connect(db_path) as db:
+        for id, text in zip(ids, proxy_texts):
+            if direction == "from":
+                db.execute("update splitted_from set proxy_text=(?) where id=(?)", (text, id))
+            else:
+                db.execute("update splitted_to set proxy_text=(?) where id=(?)", (text, id))
+
+
+def update_proxy_text_from(db_path, proxy_texts, ids=[]):
+    """Update proxy text from"""
+    update_proxy_text(db_path, proxy_texts, ids, direction="from")
+
+
+def update_proxy_text_to(db_path, proxy_texts, ids=[]):
+    """Update proxy text to"""
+    update_proxy_text(db_path, proxy_texts, ids, direction="to")
+
+
 
 def handle_marks(lines):
+    """Handle markup. Write counters."""
     res = []
     marks_counter = defaultdict(int)
     meta = defaultdict(list)
+    meta_par_ids = defaultdict(list)
     marks = (0,0,0,0,0,0)
     p_ending = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
 
@@ -338,7 +376,7 @@ def handle_marks(lines):
         for mark in preprocessor.MARK_COUNTERS:
             update_mark_counter(marks_counter, line, mark)
 
-        update_meta(meta, line)
+        update_meta(meta, line, meta_par_ids, marks_counter[preprocessor.PARAGRAPH])
                 
         if not line.endswith(get_all_extraction_endings()):
             marks = (
@@ -353,7 +391,7 @@ def handle_marks(lines):
             
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
 
-    return res, meta
+    return res, meta, meta_par_ids
 
 
 def update_mark_counter(marks_counter, line, mark):
@@ -369,20 +407,23 @@ def get_mark_value(line, mark):
         res = line[:len(line)-len(ending)]
     return res
 
+
 def get_all_extraction_endings():
     return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META])
 
     
-def update_meta(meta, line):
+def update_meta(meta, line, meta_par_ids, par_id):
     for mark in preprocessor.MARK_META:
         val = get_mark_value(line, mark)
         if val:
             meta[mark].append(val)
+            meta_par_ids[mark].append(par_id)
 
-def flatten_meta(meta, direction):
+
+def flatten_meta(meta, meta_par_ids, direction):
     res = []
     for key in meta:
-        for i, val in enumerate(meta[key]):
-            res.append((f"{key}_{direction}", val, i))
+        for i, (val, par_id) in enumerate(zip(meta[key], meta_par_ids[key])):
+            res.append((f"{key}_{direction}", val, i, par_id))
     return res
 
