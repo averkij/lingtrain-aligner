@@ -126,7 +126,7 @@ def get_splitted_to_by_id(db_path, ids):
 def get_splitted_from_by_id_range(db_path, start_id, end_id):
     """Get lines from splitted_from by ids"""
     ids = [x for x in range(start_id, end_id + 1)]
-    res = defaultdict(int)
+    res = dict()
     with sqlite3.connect(db_path) as db:
         for id, text_from, proxy_from in db.execute(
             f'select f.id, f.text, f.proxy_text from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
@@ -138,12 +138,46 @@ def get_splitted_from_by_id_range(db_path, start_id, end_id):
 def get_splitted_to_by_id_range(db_path, start_id, end_id):
     """Get lines from splitted_to by ids"""
     ids = [x for x in range(start_id, end_id + 1)]
-    res = defaultdict(int)
+    res = dict()
     with sqlite3.connect(db_path) as db:
         for id, text_to, proxy_to in db.execute(
             f'select t.id, t.text, t.proxy_text from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
             res[id] = text_to
+    return res
+
+
+def get_splitted_from(db_path, ids=[]):
+    """Get lines from splitted_from by ids"""
+    res = dict()
+    with sqlite3.connect(db_path) as db:
+        if not ids:
+            for id, text_from in db.execute(
+                f'select f.id, f.text from splitted_from f'
+            ):
+                res[id] = text_from
+        else:
+            for id, text_from in db.execute(
+            f'select f.id, f.text from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
+            ):
+                res[id] = text_from
+    return res
+
+
+def get_splitted_to(db_path, ids=[]):
+    """Get lines from splitted_to by ids"""
+    res = dict()
+    with sqlite3.connect(db_path) as db:
+        if not ids:
+            for id, text_to in db.execute(
+                f'select t.id, t.text from splitted_to t'
+            ):
+                res[id] = text_to
+        else:
+            for id, text_to in db.execute(
+            f'select t.id, t.text from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
+            ):
+                res[id] = text_to
     return res
 
 
@@ -222,6 +256,31 @@ def get_doc_items(index_items, db_path):
     return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
 
 
+def read_processing(db_path):
+    """Read the processsing document"""
+    ordered_text_ids = [x[0][0] for x in get_flatten_doc_index(db_path)]
+    with sqlite3.connect(db_path) as db:
+        db.execute('DROP TABLE If EXISTS temp.dl_ids')
+        db.execute(
+            'CREATE TEMP TABLE dl_ids(rank integer primary key, id integer)')
+        db.executemany('insert into temp.dl_ids(id) values(?)', [
+                       (x,) for x in ordered_text_ids])
+        return db.execute("""
+            SELECT
+                f.text, t.text
+            FROM
+                processing_from f
+                join
+                    processing_to t
+                        on t.id=f.id
+                join
+                    temp.dl_ids ti
+                        on ti.id = f.id
+            ORDER BY
+                ti.rank
+                """).fetchall()
+
+
 def get_meta_dict(db_path):
     """Get all the meta information as dict"""
     res = defaultdict(list)
@@ -248,6 +307,14 @@ def get_meta_from(db_path, mark, occurence):
 def get_meta_to(db_path, mark, occurence):
     """Get book meta information 'to'"""
     return get_meta(db_path, mark, "to", occurence)
+
+
+def get_lang_codes(db_path):
+    """Get languages information"""
+    with sqlite3.connect(db_path) as db:
+        lang_from = db.execute(f'select l.val from languages l where l.key="from"').fetchone()
+        lang_to = db.execute(f'select l.val from languages l where l.key="to"').fetchone()
+    return lang_from[0], lang_to[0]
 
 
 def get_processing_from(db_path):
