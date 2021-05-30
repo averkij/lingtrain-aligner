@@ -2,17 +2,12 @@
 
 
 import json
-import logging
 import sqlite3
 from collections import defaultdict
 
 import more_itertools as mit
-import numpy as np
-import seaborn as sns
 from lingtrain_aligner import aligner, helper
-from matplotlib import pyplot as plt
 from scipy import spatial
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
