@@ -2,7 +2,6 @@ from lingtrain_aligner import helper, preprocessor
 import json
 import pathlib
 import copy
-from collections import defaultdict
 
 H1_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H1
 H2_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H2
@@ -10,7 +9,7 @@ H3_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H3
 H4_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H4
 H5_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H5
 DIVIDER_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.DIVIDER
-
+MARKS = [preprocessor.H1, preprocessor.H2, preprocessor.H3, preprocessor.H4, preprocessor.H5, preprocessor.DIVIDER]
 
 def get_paragraphs(db_path, direction="from"):
     """Read all paragraphs with marks from database"""
@@ -55,6 +54,12 @@ def get_paragraphs(db_path, direction="from"):
             curr_paragraph = paragraphs_from_dict[fid][0]
         else:
             curr_paragraph = paragraphs_to_dict[tid][0]
+
+        # print("item", item)
+        # print("fid", fid)
+        # print("tid", tid)
+        # print("prev_paragraph", prev_paragraph)
+        # print("curr_paragraph", curr_paragraph)
 
         curr_h1 = paragraphs_from_dict[fid][1] if direction == "from" else paragraphs_to_dict[tid][1]
         curr_h2 = paragraphs_from_dict[fid][2] if direction == "from"  else paragraphs_to_dict[tid][2]
@@ -154,6 +159,7 @@ def get_paragraphs_polybook(db_paths, direction="to"):
             meta_dict[langs[main_language_side]] = prepare_meta(meta, direction)
             splitted_main =  helper.get_splitted_to(db_path) if direction == "to" else helper.get_splitted_from(db_path)
             splitted_dict[langs[main_language_side]] = splitted_main
+            main_lang_code = langs[main_language_side]
             add_main_language = False
 
     paragraphs_dict = dict()  
@@ -196,7 +202,9 @@ def get_paragraphs_polybook(db_paths, direction="to"):
             paragraphs_dict[lang_code][i] = curr_par
             curr_par = []
 
-    return paragraphs_dict, meta_dict
+    meta_info = { "items": meta_dict, "main_lang_code": main_lang_code}
+
+    return paragraphs_dict, par_ids, meta_info
 
 
 def get_aligned_sentence_mappings(mapping_merged, aux_mappings, lang_codes, target_language_side, main_language_side):
@@ -384,15 +392,11 @@ def merge_par_ids(par_ids1, par_ids2):
 def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, direction="from"):
     """Next paragraph generator"""
     if direction == "from":
-        prev_meta_min = paragraphs_from_dict[json.loads(index[0][0][1])[0]]
         prev_meta_max = paragraphs_from_dict[json.loads(index[0][0][1])[-1]]
     else:
-        prev_meta_min = paragraphs_to_dict[json.loads(index[0][0][3])[0]]
         prev_meta_max = paragraphs_to_dict[json.loads(index[0][0][3])[-1]]
 
     prev_paragraph_max = prev_meta_max[0]
-
-    foo = 0
 
     # prev_h1, prev_h2, prev_h3, prev_h4, prev_h5, prev_di = prev_meta[1], prev_meta[2], prev_meta[3], prev_meta[4], prev_meta[5], prev_meta[6]
 
@@ -410,14 +414,10 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
             curr_paragraph_min = paragraphs_to_dict[tid_min][0]
             curr_paragraph_max = paragraphs_to_dict[tid_max][0]
 
-
-
         # if curr_paragraph_min > 63 and curr_paragraph_min < 67:
         #     print("tid_min, tid_max", tid_min, tid_max)
         #     print("curr_paragraph_min", "curr_paragraph_max", curr_paragraph_min, curr_paragraph_max)
         #     print("prev_paragraph_max", prev_paragraph_max)
-
-
 
         if curr_paragraph_min == prev_paragraph_max:
             
@@ -485,19 +485,19 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
 
         title_from = get_meta_from(meta, preprocessor.TITLE)
         if title_from:
-            res_html.write("<h1>" + title_from + "</h1>")
+            res_html.write("<h1>" + title_from[0] + "</h1>")
         author_from = get_meta_from(meta, preprocessor.AUTHOR)
         if author_from:
-            res_html.write("<h2>" + author_from + "</h2>")
+            res_html.write("<h2>" + author_from[0] + "</h2>")
 
         res_html.write("</div><div class='par dt-cell'>")
 
         title_to = get_meta_to(meta, preprocessor.TITLE)
         if title_to:
-            res_html.write("<h1>" + title_to + "</h1>")
+            res_html.write("<h1>" + title_to[0] + "</h1>")
         author_to = get_meta_to(meta, preprocessor.AUTHOR)
         if author_to:
-            res_html.write("<h2>" + author_to + "</h2>")
+            res_html.write("<h2>" + author_to[0] + "</h2>")
 
         res_html.write("</div></div>")
 
@@ -541,7 +541,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
         res_html.write("</body></html>")
 
 
-def create_polybook(lang_ordered, paragraphs, metas, output_path, template, styles=[]):
+def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[]):
     """Generate multilingual html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -556,7 +556,6 @@ def create_polybook(lang_ordered, paragraphs, metas, output_path, template, styl
     else:
         css = generate_css([], cols=langs_count)
         sent_cycle = 2
-
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
@@ -578,7 +577,7 @@ def create_polybook(lang_ordered, paragraphs, metas, output_path, template, styl
         res_html.write("<div class='dt-row header'>")
         for lang in lang_ordered:
             res_html.write("<div class='par dt-cell'>")
-            meta = metas[lang]
+            meta = metas["items"][lang]
             title = get_meta(meta, preprocessor.TITLE)
             author = get_meta(meta, preprocessor.AUTHOR)
             if title:
@@ -595,18 +594,20 @@ def create_polybook(lang_ordered, paragraphs, metas, output_path, template, styl
                 "<div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
         res_html.write("</div>")
 
-        # --------------------FIRST HEADERS IF EXIST
-
-
         # --------------------PARAGRAPHS
-                
+        next_mark, next_meta_par_id = get_next_meta_par_id(metas)
         min_par_len = min([len(paragraphs[x]) for x in paragraphs])
             
         for actual_paragraphs_id in range(min_par_len):
-            res_html.write("<div class='dt-row'>")
+            real_par_id = delimeters[actual_paragraphs_id]
 
-            for lang in lang_ordered:
+            while next_meta_par_id <= real_par_id:
+                write_next_polyheader(res_html, next_mark, metas["items"], lang_ordered)
+                next_mark, next_meta_par_id = get_next_meta_par_id(metas)
             
+            res_html.write("<div class='dt-row'>")
+            for lang in lang_ordered:
+                
                 res_html.write(f"<div class='par dt-cell'>  ")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
@@ -621,28 +622,32 @@ def create_polybook(lang_ordered, paragraphs, metas, output_path, template, styl
         res_html.write("</body></html>")
 
 
-def write_polyheader(writer, metas_all, mark, occurence):
-    metas = []
-    for m in metas_all:
-        meta = get_meta_from(m, mark, occurence)
-        metas.append(meta)
+def get_next_meta_par_id(metas):
+    lang_code = metas["main_lang_code"]
+    meta = metas["items"][lang_code]
+    min_par_id = float('Inf')
+    next_mark = ""
+    for mark in MARKS:
+        if mark in meta and meta[mark]:
+            if meta[mark][0][2] < min_par_id:
+                next_mark = mark
+                min_par_id = meta[mark][0][2]
+    return next_mark, min_par_id
 
-    meta_to = get_meta_to(metas_all[0], mark, occurence)
-    metas.append(meta_to)    
-    
-    #check metas
-    # if not meta_to: meta_to=meta_from
 
-    if metas[0]:
-
-        writer.write("<div class='dt-row header'>")
-        
-        for meta in metas:
-            writer.write("<div class='par dt-cell'>")
-            writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' + meta + f'</{HEADER_HTML_MAPPING[mark]}>')
-            writer.write("</div>")
-            
+def write_next_polyheader(writer, next_mark, metas, lang_ordered):
+    writer.write("<div class='dt-row header'>")
+    for lang in lang_ordered:
+        meta = metas[lang][next_mark]
+        if meta:
+            val = meta.pop(0)
+        else:
+            val = ("",)
+        writer.write("<div class='par dt-cell'>")
+        writer.write(f'<{HEADER_HTML_MAPPING[next_mark]}>' + val[0] + f'</{HEADER_HTML_MAPPING[next_mark]}>')
         writer.write("</div>")
+            
+    writer.write("</div>")
 
 
 def write_header(writer, meta, mark, occurence, add_divider=False):
@@ -658,12 +663,12 @@ def write_header(writer, meta, mark, occurence, add_divider=False):
             writer.write("</div>")
         # left
         writer.write("<div class='dt-row header'><div class='par dt-cell'>")
-        writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' + meta_from + f'</{HEADER_HTML_MAPPING[mark]}>')
+        writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' + meta_from[0] + f'</{HEADER_HTML_MAPPING[mark]}>')
         writer.write("</div>")
         # right
         writer.write("<div class='par dt-cell'>")
         writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' + get_meta_to(meta,
-                                            mark, occurence) + f'</{HEADER_HTML_MAPPING[mark]}>')
+                                            mark, occurence)[0] + f'</{HEADER_HTML_MAPPING[mark]}>')
         writer.write("</div></div>")
 
 
@@ -680,7 +685,7 @@ def prepare_meta(meta, direction):
 def get_meta(meta, mark, occurence=0):
     """Get prepared meta value"""
     if len(meta[mark]) > occurence:
-        return meta[mark][occurence]
+        return meta[mark][occurence][0]
     return ''
 
 
@@ -825,4 +830,38 @@ STYLES = {
         '{"background": "linear-gradient(90deg, #9BD3DD 0px, #fff 150px)"}',
         '{"background": "linear-gradient(90deg, #FFFCC9 0px, #fff 150px)"}'    
         ]
+
+# styles3 = [
+#     '{ }',
+#     '{"background": "#fafad2", "color": "black"}',
+#     ]
+
+
+# styles4 = [
+#     '{ }',
+#     '{"background": "crimson", "color": "white", "border-radius": "15px"}',
+#     ]
+
+# styles5 = [
+#     '{ }',
+#     '{"background": "linear-gradient(45deg, #85FFBD 0%, #FFFB7D 100%)"}',
+#     ]
+
+# styles6 = [
+#     '{"background": "linear-gradient(90deg, #FDEB71 0%, #fff 20%)"}',
+#     '{"background": "linear-gradient(90deg, #ABDCFF 0%, #fff 20%)"}',
+#     '{"background": "linear-gradient(90deg, #FEB692 0%, #fff 20%)"}',
+#     '{"background": "linear-gradient(90deg, #CE9FFC 0%, #fff 20%)"}',
+#     '{"background": "linear-gradient(90deg, #81FBB8 0%, #fff 20%)"}'
+#     ]
+
+# styles7 = [
+#     '{"background": "linear-gradient(90deg, #FDEB71 0px, #fff 150px)"}',
+#     '{"background": "linear-gradient(90deg, #ABDCFF 0px, #fff 150px)"}',
+#     '{"background": "linear-gradient(90deg, #FEB692 0px, #fff 150px)"}',
+#     '{"background": "linear-gradient(90deg, #CE9FFC 0px, #fff 150px)"}',
+#     '{"background": "linear-gradient(90deg, #81FBB8 0px, #fff 150px)"}'
+#     ]
+
+
 }
