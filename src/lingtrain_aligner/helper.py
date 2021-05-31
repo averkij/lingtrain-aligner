@@ -285,8 +285,8 @@ def get_meta_dict(db_path):
     """Get all the meta information as dict"""
     res = defaultdict(list)
     with sqlite3.connect(db_path) as db:
-        for key, val in db.execute(f'select m.key, m.val from meta m'):
-            res[key].append(val)
+        for key, val, occurence, par_id in db.execute(f'select m.key, m.val, m.occurence, m.par_id from meta m'):
+            res[key].append((val, occurence, par_id))
     return res
 
 
