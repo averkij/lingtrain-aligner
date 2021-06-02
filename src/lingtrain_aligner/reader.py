@@ -594,7 +594,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
             real_par_id = delimeters[actual_paragraphs_id]
 
             while next_meta_par_id <= real_par_id:
-                write_next_polyheader(res_html, next_mark, metas["items"], lang_ordered)
+                write_next_polyheader(res_html, next_mark, metas, lang_ordered)
                 next_mark, next_meta_par_id = get_next_meta_par_id(metas)
             
             res_html.write("<div class='dt-row'>")
@@ -627,7 +627,9 @@ def get_next_meta_par_id(metas):
     return next_mark, min_par_id
 
 
-def write_next_polyheader(writer, next_mark, metas, lang_ordered):
+def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered):
+    metas = metas_dict["items"]
+    main_lang_code = metas_dict["main_lang_code"]
     writer.write("<div class='dt-row header'>")
     for lang in lang_ordered:
         meta = metas[lang][next_mark]
@@ -638,8 +640,11 @@ def write_next_polyheader(writer, next_mark, metas, lang_ordered):
         writer.write("<div class='par dt-cell'>")
         writer.write(f'<{HEADER_HTML_MAPPING[next_mark]}>' + val[0] + f'</{HEADER_HTML_MAPPING[next_mark]}>')
         writer.write("</div>")
-            
     writer.write("</div>")
+    #pop main lang if not yet popped
+    if main_lang_code not in lang_ordered:
+        meta = metas[main_lang_code][next_mark]
+        if meta: meta.pop(0)
 
 
 def write_header(writer, meta, mark, occurence, add_divider=False):
@@ -790,6 +795,7 @@ h3 {
 .dt-cell {
     display: table-cell;
     width: %COL_WIDTH% !important;
+    word-break: break-word;
 }
 
 .dt-cell-colspan {
