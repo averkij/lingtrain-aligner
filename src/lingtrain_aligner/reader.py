@@ -463,7 +463,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
             <link rel="stylesheet" href="main.css">
             <link rel="preconnect" href="https://fonts.gstatic.com">
             <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Raleway&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
             <title>Lingtrain Magic Book</title>
             {css}
         </head>
@@ -504,7 +504,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
         # --------------------DIVIDER
         res_html.write("<div class='dt-row header'>")
         res_html.write(
-            "<div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
+            "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
         res_html.write("</div>")
 
         # --------------------FIRST HEADERS IF EXIST
@@ -526,7 +526,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
             elif p_from == DIVIDER_MARK:
                 res_html.write("<div class='dt-row header'>")
                 res_html.write(
-                    "<div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
+                    "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
                 res_html.write("</div>")
             else:
                 res_html.write("<div class='dt-row'><div class='par dt-cell'>")
@@ -564,7 +564,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
             <link rel="stylesheet" href="main.css">
             <link rel="preconnect" href="https://fonts.gstatic.com">
             <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Raleway&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
             <title>Lingtrain Magic Book</title>
             {css}
         </head>
@@ -591,7 +591,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         res_html.write("<div class='dt-row header'>")
         for _ in range(langs_count):
             res_html.write(
-                "<div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
+                "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
         res_html.write("</div>")
 
         # --------------------PARAGRAPHS
@@ -752,7 +752,20 @@ CSS_GENERAL = """
 }
 
 h1, h2, h3, h4, h5 {
-    font-family: 'Raleway', cursive;
+    font-family: 'Oswald', cursive;
+}
+
+h1 {
+    font-weight: 400;
+}
+
+h2 {
+    text-transform: uppercase;
+    font-weight: 400;
+}
+
+h3 {
+    font-weight: 300;
 }
 
 .cont {
@@ -774,12 +787,12 @@ h1, h2, h3, h4, h5 {
 }
 
 .dt-row:nth-child(even):not(.header) {
-    background: #fafafa;
+    background: #fefefe;
 }
 
 .dt-row:nth-child(even):not(.header) > .dt-cell:not(.divider) {
-    border-top: 1px solid #e0e0e0;
-    border-bottom: 1px solid #e0e0e0;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .dt-cell {
@@ -819,49 +832,15 @@ h1, h2, h3, h4, h5 {
 
 STYLES = {
     "pastel_fill": [
-        '{"background": "#A2E4B8", "color": "black", "border-bottom": "0px solid red"}',
-        '{"background": "#FFC1CC", "color": "black"}',
-        '{"background": "#9BD3DD", "color": "black"}',
-        '{"background": "#FFFCC9", "color": "black"}'
-        ],
+    '{"background": "#cfefd7", "color": "black"}',
+    '{"background": "#fadce2", "color": "black"}',
+    '{"background": "#cce7eb", "color": "black"}',
+    '{"background": "#fefbd6", "color": "black"}'
+    ],
     "pastel_start": [
-        '{"background": "linear-gradient(90deg, #A2E4B8 0px, #fff 150px)"}',
-        '{"background": "linear-gradient(90deg, #FFC1CC 0px, #fff 150px)"}',
-        '{"background": "linear-gradient(90deg, #9BD3DD 0px, #fff 150px)"}',
-        '{"background": "linear-gradient(90deg, #FFFCC9 0px, #fff 150px)"}'    
+        '{"background": "linear-gradient(90deg, #cfefd7 0px, #ffffff00 150px)"}',
+        '{"background": "linear-gradient(90deg, #fadce2 0px, #ffffff00 150px)"}',
+        '{"background": "linear-gradient(90deg, #cce7eb 0px, #ffffff00 150px)"}',
+        '{"background": "linear-gradient(90deg, #fefbd6 0px, #ffffff00 150px)"}'  
         ]
-
-# styles3 = [
-#     '{ }',
-#     '{"background": "#fafad2", "color": "black"}',
-#     ]
-
-
-# styles4 = [
-#     '{ }',
-#     '{"background": "crimson", "color": "white", "border-radius": "15px"}',
-#     ]
-
-# styles5 = [
-#     '{ }',
-#     '{"background": "linear-gradient(45deg, #85FFBD 0%, #FFFB7D 100%)"}',
-#     ]
-
-# styles6 = [
-#     '{"background": "linear-gradient(90deg, #FDEB71 0%, #fff 20%)"}',
-#     '{"background": "linear-gradient(90deg, #ABDCFF 0%, #fff 20%)"}',
-#     '{"background": "linear-gradient(90deg, #FEB692 0%, #fff 20%)"}',
-#     '{"background": "linear-gradient(90deg, #CE9FFC 0%, #fff 20%)"}',
-#     '{"background": "linear-gradient(90deg, #81FBB8 0%, #fff 20%)"}'
-#     ]
-
-# styles7 = [
-#     '{"background": "linear-gradient(90deg, #FDEB71 0px, #fff 150px)"}',
-#     '{"background": "linear-gradient(90deg, #ABDCFF 0px, #fff 150px)"}',
-#     '{"background": "linear-gradient(90deg, #FEB692 0px, #fff 150px)"}',
-#     '{"background": "linear-gradient(90deg, #CE9FFC 0px, #fff 150px)"}',
-#     '{"background": "linear-gradient(90deg, #81FBB8 0px, #fff 150px)"}'
-#     ]
-
-
 }
