@@ -472,14 +472,6 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
 
-        # --------------------IMG
-        # res_html.write("<div class='dt-row'><div class='par dt-cell'>")
-        # res_html.write("<img class='flag-img' src='img/flags/flag-ru-h.svg'/>")
-        # res_html.write("</div>")
-        # res_html.write("<div class='par dt-cell'>")
-        # res_html.write("<img class='flag-img' src='img/flags/flag-de-h.svg'/>")
-        # res_html.write("</div></div>")
-
         #--------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header'><div class='par dt-cell'>")
 
@@ -504,7 +496,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
         # --------------------DIVIDER
         res_html.write("<div class='dt-row header'>")
         res_html.write(
-            "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
+            "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
         res_html.write("</div>")
 
         # --------------------FIRST HEADERS IF EXIST
@@ -526,7 +518,7 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
             elif p_from == DIVIDER_MARK:
                 res_html.write("<div class='dt-row header'>")
                 res_html.write(
-                    "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='img/divider1.svg'/></div>")
+                    "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
                 res_html.write("</div>")
             else:
                 res_html.write("<div class='dt-row'><div class='par dt-cell'>")
