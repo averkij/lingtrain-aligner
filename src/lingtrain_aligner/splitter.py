@@ -123,9 +123,22 @@ def get_substrings(line, sep, endings, res):
 
 def split_by_sentences_wrapper(lines, langcode):
     """Special wrapper with an additional paragraph splitting"""
-    sentences = ensure_paragraph_splitting(
-        split_by_sentences(lines, langcode))
-    return sentences
+    res, acc = [], []
+    marks = preprocessor.get_all_meta_marks()
+    for line in lines:
+        if any(m in line for m in marks):
+            print("found mark", line)
+            if acc:
+                sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode))
+                res.extend(sentences)
+                acc = []
+            res.append(line)
+        else:
+            acc.append(line)
+    if acc:
+        sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode))
+        res.extend(sentences)            
+    return res
 
 
 def split_by_sentences(lines, langcode):
@@ -177,12 +190,9 @@ def split_by_sentences_and_save(raw_path, splitted_path, langcode):
     with open(raw_path, mode='r', encoding='utf-8') as input_file, open(splitted_path, mode='w', encoding='utf-8') as out_file:
         if is_lang_code_valid(langcode):
             lines = input_file.readlines()
-            print(lines[:20], "\n")
             lines = preprocessor.mark_paragraphs(lines)  
-            print(lines[:20], "\n")        
             sentences = split_by_sentences_wrapper(
                 lines, langcode)
-            print(sentences[:20], "\n")
         else:
             raise Exception("Unknown language code.")
 

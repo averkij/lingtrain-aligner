@@ -14,9 +14,12 @@ H1, H2, H3, H4, H5 = "h1","h2","h3","h4","h5"
 DIVIDER = "divider"
 TITLE = "title"
 AUTHOR = "author"
+QUOTE_TEXT = "qtext"
+QUOTE_NAME = "qname"
+IMAGE = "image"
 
-MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER]
-MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR]
+MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
+MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 
 PARAGRAPH_MARK = "%%%%%"
 LINE_ENDINGS = [".","!","?",";",":","。","？","！"] #”
@@ -149,17 +152,7 @@ def mark_paragraphs(lines):
 
 def parse_marked_line(line):
     """Parse marked line for UI view"""
-    res = {
-        "pa": False,
-        "au": False,
-        "ti": False,
-        "di": False, #divider
-        "h1": False,
-        "h2": False,
-        "h3": False,
-        "h4": False,
-        "h5": False,
-    }
+    res = defaultdict(bool)
     p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
     if line.endswith(p_ending):
         #remove last occurence of PARAGRAPH_MARK
@@ -186,3 +179,7 @@ def extract_marks(res, line, ix):
         if line.endswith(ending):
             res.append((line[:len(line)-len(ending)], ix, mark))
     return res
+
+
+def get_all_meta_marks():
+    return [f"{PARAGRAPH_MARK}{m}" for m in MARK_META]
