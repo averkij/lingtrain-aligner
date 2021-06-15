@@ -1,11 +1,8 @@
-import os
-import json
-import numpy as np
-
 import re
 import dateutil.parser as date_parser
 import dateparser
 
+from collections import defaultdict
 
 #preprocessing cleaning operations
 DELETE = "delete"
@@ -143,7 +140,49 @@ def is_date(line):
 
 def mark_paragraphs(lines):
     line_endings = tuple([x for x in LINE_ENDINGS])
-    for i, line in enumerate(lines):
+    for i, line in enumerate(lines):        
+        line = line.strip()
         if line.endswith(line_endings):
             lines[i] = line[:-1] + PARAGRAPH_MARK + line[-1]
     return lines
+
+
+def parse_marked_line(line):
+    """Parse marked line for UI view"""
+    res = {
+        "pa": False,
+        "au": False,
+        "ti": False,
+        "di": False, #divider
+        "h1": False,
+        "h2": False,
+        "h3": False,
+        "h4": False,
+        "h5": False,
+    }
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
+    if line.endswith(p_ending):
+        #remove last occurence of PARAGRAPH_MARK
+        line = ''.join(line.rsplit(PARAGRAPH_MARK, 1))
+        res["pa"] = True
+    for mark in MARK_META:
+        ending = f"{PARAGRAPH_MARK}{mark}."
+        if line.endswith(ending):
+            res[mark[:2]] = True
+            res["pa"] = False
+            line = line[:len(line)-len(ending)]
+    res["text"] = line
+    return res
+
+
+def extract_marks(res, line, ix):
+    """Extract marks information in exists"""
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
+    if line.endswith(p_ending):
+        #remove last occurence of PARAGRAPH_MARK
+        line = ''.join(line.rsplit(PARAGRAPH_MARK, 1))
+    for mark in MARK_META:
+        ending = f"{PARAGRAPH_MARK}{mark}."
+        if line.endswith(ending):
+            res.append((line[:len(line)-len(ending)], ix, mark))
+    return res

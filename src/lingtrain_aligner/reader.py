@@ -804,6 +804,7 @@ h3 {
 
 .divider {
     padding-top: 30px;
+    padding-bottom: 30px;
     vertical-align:middle;
     text-align:center;
 }

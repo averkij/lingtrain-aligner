@@ -1,7 +1,6 @@
 """Texts splitter part of the engine"""
 
 
-import os
 import re
 
 # import constants as con
@@ -122,14 +121,14 @@ def get_substrings(line, sep, endings, res):
             res.append(line + sep)
 
 
-def split_by_sentences_wrapper(lines, langcode, leave_marks=False):
+def split_by_sentences_wrapper(lines, langcode):
     """Special wrapper with an additional paragraph splitting"""
     sentences = ensure_paragraph_splitting(
-        split_by_sentences(lines, langcode, leave_marks))
+        split_by_sentences(lines, langcode))
     return sentences
 
 
-def split_by_sentences(lines, langcode, leave_marks=False):
+def split_by_sentences(lines, langcode):
     """Split line by sentences using language specific rules"""
     line = ' '.join(lines)
     if langcode == RU_CODE:
@@ -146,16 +145,10 @@ def split_by_sentences(lines, langcode, leave_marks=False):
         ],
             split_by_razdel)
         return sentences
-    if langcode == ZH_CODE and leave_marks:
+    if langcode == ZH_CODE:
         sentences = preprocess(line, [
+            # (pat_comma, '。'),
             (pattern_zh, '')
-        ],
-            split_zh)
-        return sentences
-    if langcode == ZH_CODE and not leave_marks:
-        sentences = preprocess(line, [
-            (pat_comma, '。'),
-            (pattern_zh_total, '')
         ],
             split_zh)
         return sentences
@@ -179,13 +172,17 @@ def split_by_sentences(lines, langcode, leave_marks=False):
     return sentences
 
 
-def split_by_sentences_and_save(raw_path, splitted_path, filename, langcode, username):
+def split_by_sentences_and_save(raw_path, splitted_path, langcode):
     """Split raw text file by sentences and save"""
-
     with open(raw_path, mode='r', encoding='utf-8') as input_file, open(splitted_path, mode='w', encoding='utf-8') as out_file:
         if is_lang_code_valid(langcode):
-            sentences = split_by_sentences(
-                input_file.readlines(), langcode)
+            lines = input_file.readlines()
+            print(lines[:20], "\n")
+            lines = preprocessor.mark_paragraphs(lines)  
+            print(lines[:20], "\n")        
+            sentences = split_by_sentences_wrapper(
+                lines, langcode)
+            print(sentences[:20], "\n")
         else:
             raise Exception("Unknown language code.")
 
