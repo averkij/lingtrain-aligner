@@ -212,21 +212,23 @@ def resolve_conflict(db_path, conflict, solution, lines_from, lines_to, show_log
         aligner.update_doc_index(db, index_for_update)
 
 
-def show_conflict(db_path, conflict):
+def show_conflict(db_path, conflict, print_conf=True):
     """Print the conflict information"""
-    foo = helper.get_splitted_from_by_id_range(
+    splitted_from = helper.get_splitted_from_by_id_range(
         db_path, conflict["from"]["start"][0], conflict["from"]["end"][0])
-    bar = helper.get_splitted_to_by_id_range(
+    splitted_to = helper.get_splitted_to_by_id_range(
         db_path, conflict["to"]["start"][0], conflict["to"]["end"][0])
-    for i, id in enumerate(foo):
-        print(id, foo[id])
-    print("\n")
-    for i, id in enumerate(bar):
-        print(id, bar[id])
-    print("-----------------------------------------------")
+    if print_conf:
+        for i, id in enumerate(splitted_from):
+            print(id, splitted_from[id])
+        print("\n")
+        for i, id in enumerate(splitted_to):
+            print(id, splitted_to[id])
+        print("-----------------------------------------------")
+    return splitted_from, splitted_to
 
 
-def get_statistics(conflicts):
+def get_statistics(conflicts, print_stat=True):
     """Print the conflicts statistics"""
     statistics = defaultdict(int)
     for i, c in enumerate(conflicts):
@@ -235,13 +237,17 @@ def get_statistics(conflicts):
         conflict_type = f"{len_from}:{len_to}"
         statistics[conflict_type] += 1
     table = sorted(statistics.items(), key=lambda x: x[1], reverse=True)
-    for x in table:
-        print(x)
+    if print_stat:
+        for x in table:
+            print(x)
+    return statistics
 
 
 def get_all_conflicts(db_path, min_chain_length=3, max_conflicts_len=6, batch_id=-1):
     """Get conflicts to solve and other"""
     prepared_index = prepare_index(db_path, batch_id)
+    if not prepared_index:
+        return [], []
     chains_from, chains_to = get_good_chains(
         prepared_index, min_len=min_chain_length)
     conflicts_to_solve, conflicts_rest = get_conflicts(
