@@ -265,7 +265,7 @@ def read_processing(db_path):
             'CREATE TEMP TABLE dl_ids(rank integer primary key, id integer)')
         db.executemany('insert into temp.dl_ids(id) values(?)', [
                        (x,) for x in ordered_text_ids])
-        return db.execute("""
+        res = db.execute("""
             SELECT
                 f.text, t.text
             FROM
@@ -279,6 +279,10 @@ def read_processing(db_path):
             ORDER BY
                 ti.rank
                 """).fetchall()
+        if not res:
+            return [], []
+        res = [list(x) for x in zip(*res)] 
+        return res[0], res[1]
 
 
 def get_meta_dict(db_path):
