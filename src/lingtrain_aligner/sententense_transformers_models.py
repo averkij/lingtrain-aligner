@@ -4,6 +4,10 @@ import pickle
 from lingtrain_aligner.helper import lazy_property
 from sentence_transformers import SentenceTransformer
 from torch import device
+import torch
+
+from transformers import AutoTokenizer, AutoModel
+
 
 # torch.backends.quantized.engine = 'qnnpack'
 
@@ -69,9 +73,36 @@ class SentenceTransformersModelLaBSE():
         return vecs
 
 
+class RuBertTinyModel():
+    @lazy_property
+    def model(self):
+        print("Loading rubert tiny model from Internet.")
+        _model = AutoModel.from_pretrained("cointegrated/rubert-tiny")
+        return _model
+
+    @lazy_property
+    def tokenizer(self):
+        print("Loading rubert tiny tokenizer from Internet.")
+        _tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny")
+        return _tokenizer
+
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
+        vecs = []
+        for text in lines:
+            t = self.tokenizer(text, padding=True, truncation=True, return_tensors='pt')
+            with torch.no_grad():
+                model_output = self.model(**t)
+            embeddings = model_output.last_hidden_state[:, 0, :]
+            embeddings = torch.nn.functional.normalize(embeddings)
+            vecs.append(embeddings[0].cpu().numpy())
+        return vecs
+
+
+
 sentence_transformers_model = SentenceTransformersModel()
 sentence_transformers_model_xlm_100 = SentenceTransformersModelXlm100()
 sentence_transformers_model_labse = SentenceTransformersModelLaBSE()
+rubert_tiny = RuBertTinyModel()
 
 
 # print(os.getcwd())
