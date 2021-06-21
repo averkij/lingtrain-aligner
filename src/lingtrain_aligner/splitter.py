@@ -28,6 +28,7 @@ XX_CODE = "xx"
 LANGUAGES = {
     RU_CODE: {"name": "Russian"},
     ZH_CODE: {"name": "Chinese"},
+    
     DE_CODE: {"name": "German"},
     EN_CODE: {"name": "English"},
     FR_CODE: {"name": "French"},
@@ -153,7 +154,7 @@ def split_by_sentences(lines, langcode):
         return sentences
     if langcode == DE_CODE:
         sentences = preprocess(line, [
-            (german_quotes, ''),
+            (german_quotes, '"'),
             *DEFAULT_PREPROCESSING
         ],
             split_by_razdel)
