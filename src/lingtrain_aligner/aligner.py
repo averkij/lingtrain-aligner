@@ -11,7 +11,6 @@ import numpy as np
 from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor
 from scipy import spatial
 
-
 def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
     """Calculate embedding of the string"""
     return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
@@ -37,7 +36,7 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     # save picture
     if save_pic:
         vis_helper.save_pic(sim_matrix_best, lang_name_to,
-                            lang_name_from, img_path, batch_number)
+                            lang_name_from, img_path, batch_number, transparent=True)
 
     best_sim_ind = sim_matrix_best.argmax(1)
     texts_from = []
@@ -390,6 +389,8 @@ def handle_marks(lines):
             res.append((line, marks))
             
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
+        else:
+            marks_counter[preprocessor.PARAGRAPH] += 1
 
     return res, meta, meta_par_ids
 
