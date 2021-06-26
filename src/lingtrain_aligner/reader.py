@@ -613,9 +613,9 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         title = get_meta(meta, preprocessor.TITLE)
         author = get_meta(meta, preprocessor.AUTHOR)
         if title:
-            res_html += "<h1 class='book-title'>" + title + "</h1>"
+            res_html += "<h1 class='lt-title'>" + title + "</h1>"
         if author:
-            res_html += "<h1 class='book-author'>" + author + "</h1>"
+            res_html += "<h1 class='lt-author'>" + author + "</h1>"
         res_html += "</div>"
     res_html += "</div>"
 
@@ -695,9 +695,9 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
             title = get_meta(meta, preprocessor.TITLE)
             author = get_meta(meta, preprocessor.AUTHOR)
             if title:
-                res_html.write("<h1 class='book-title'>" + title + "</h1>")
+                res_html.write("<h1 class='lt-title'>" + title + "</h1>")
             if author:
-                res_html.write("<h1 class='book-author'>" + author + "</h1>")
+                res_html.write("<h1 class='lt-author'>" + author + "</h1>")
             res_html.write("</div>")
         res_html.write("</div>")
 
@@ -894,6 +894,10 @@ CSS_GENERAL = """
     }
 }
 
+# body {
+#     background: #fbfbf8;
+# }
+
 h1, h2, h3, h4, h5 {
     font-family: 'Oswald', cursive;
 }
@@ -929,9 +933,9 @@ h3 {
     display: table-row;
 }
 
-.dt-row:nth-child(even):not(.header) {
-    background: #fefefe;
-}
+# .dt-row:nth-child(even):not(.header) {
+#     background: #fefefe;
+# }
 
 .dt-row:nth-child(even):not(.header) > .dt-cell:not(.divider) {
     border-top: 1px solid #f0f0f0;
@@ -972,6 +976,38 @@ h3 {
 .sent {
     padding: 0 6px;
 }
+.text-center {
+    text-align: center;
+}
+
+.lt-quote-text {
+    font-style: italic;
+    text-align: right;
+    font-size: 0.9em;
+}
+.lt-quote-name {
+    text-align: right;
+    font-size: 0.8em;
+}
+.lt-image {
+    max-height: 300px;
+}
+.lt-title {
+    font-size: 42px;
+}
+.lt-author {
+    font-size: 40px;
+}
+
+@media print {
+    .lt-title {
+        font-size: 36px;
+    }
+    .lt-author {
+        font-size: 36px;
+    }
+}
+
 """
 
 

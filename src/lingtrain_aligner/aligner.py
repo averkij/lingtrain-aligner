@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import re
 import sqlite3
 from collections import defaultdict
 
@@ -11,15 +12,26 @@ import numpy as np
 from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor
 from scipy import spatial
 
+to_delete = re.compile(
+    r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
+
 def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
     """Calculate embedding of the string"""
     return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
+
+
+def clean_lines(lines):
+    """Clean line"""
+    return [re.sub(to_delete, '', line) for line in lines]
 
 
 def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path=""):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
+
+    # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
+    # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
     vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
@@ -325,6 +337,21 @@ def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy
             db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "to"))
     with sqlite3.connect(db_path) as db:
         db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
+
+
+def load_proxy(db_path, filepath, direction):
+    lines_proxy = []
+    if os.path.isfile(filepath):
+        with open(filepath, mode="r", encoding="utf-8") as input_path:
+            lines_proxy = input_path.readlines()
+    ids = [x for x in range(1, len(lines_proxy)+1)]
+    with sqlite3.connect(db_path) as db:        
+        if direction == "from":
+            db.executemany("update splitted_from set proxy_text=(?) where id=(?)", [
+                            (proxy, id) for id, proxy in zip(ids, lines_proxy)])
+        else:
+            db.executemany("update splitted_to set proxy_text=(?) where id=(?)", [
+                            (proxy, id) for id, proxy in zip(ids, lines_proxy)])
 
 
 def update_proxy_text(db_path, proxy_texts, ids, direction):

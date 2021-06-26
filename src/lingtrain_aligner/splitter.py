@@ -186,14 +186,17 @@ def split_by_sentences(lines, langcode):
     return sentences
 
 
-def split_by_sentences_and_save(raw_path, splitted_path, langcode):
+def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=False):
     """Split raw text file by sentences and save"""
     with open(raw_path, mode='r', encoding='utf-8') as input_file, open(splitted_path, mode='w', encoding='utf-8') as out_file:
         if is_lang_code_valid(langcode):
             lines = input_file.readlines()
-            lines = preprocessor.mark_paragraphs(lines)  
-            sentences = split_by_sentences_wrapper(
-                lines, langcode)
+            if handle_marks:
+                lines = preprocessor.mark_paragraphs(lines)  
+                sentences = split_by_sentences_wrapper(
+                    lines, langcode)
+            else:
+                sentences = split_by_sentences(lines, langcode)
         else:
             raise Exception("Unknown language code.")
 
