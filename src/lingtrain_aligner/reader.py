@@ -14,6 +14,16 @@ MARKS = [preprocessor.H1, preprocessor.H2, preprocessor.H3,
          preprocessor.QUOTE_TEXT, preprocessor.QUOTE_NAME, preprocessor.IMAGE]
 
 
+def is_empty_cells(db_path):
+    index = helper.get_flatten_doc_index(db_path)
+    for item in index:
+        from_ids = json.loads(item[0][1])
+        to_ids = json.loads(item[0][3])
+        if len(from_ids) == 0 or len(to_ids) == 0:
+            return True
+    return False
+    
+
 def get_paragraphs(db_path, direction="from"):
     """Read all paragraphs with marks from database"""
     # default direction is 'from'
@@ -38,85 +48,27 @@ def get_paragraphs(db_path, direction="from"):
     paragraphs_to_dict = helper.get_paragraph_dict(splitted_to)
 
     meta = helper.get_meta_dict(db_path)
+    lang_from, lang_to = helper.get_lang_codes(db_path)
+    meta_dict, paragraphs_dict = dict(), dict()
+    meta_dict[lang_from] = prepare_meta(meta, "from")
+    meta_dict[lang_to] = prepare_meta(meta, "to")
 
-    paragraphs_from, paragraphs_to = [], []
-    if direction == "from":
-        prev_meta = paragraphs_from_dict[json.loads(index[0][0][1])[0]]
-    else:
-        prev_meta = paragraphs_to_dict[json.loads(index[0][0][3])[0]]
+    main_lang_code = lang_from if direction == "from" else lang_to
 
-    prev_paragraph = prev_meta[0]
-    prev_h1, prev_h2, prev_h3, prev_h4, prev_h5, prev_di = prev_meta[
-        1], prev_meta[2], prev_meta[3], prev_meta[4], prev_meta[5], prev_meta[6]
+    gen_main = get_next_paragraph(
+        index, data, paragraphs_from_dict, paragraphs_to_dict, direction)
+    par_info = [(par_from, par_to, par_id)
+                for par_from, par_to, par_id, _, _ in gen_main]
+    par_info_list = list(zip(*par_info))
 
-    curr_from, curr_to = [data[0]["text_from"]], [data[0]["text_to"]]
+    paragraphs_from, paragraphs_to, par_ids = par_info_list[0], par_info_list[1], par_info_list[2]
 
-    for item, texts in zip(index[1:], data[1:]):
-        fid = max(json.loads(item[0][1]))
-        tid = max(json.loads(item[0][3]))
+    paragraphs_dict[lang_from] = paragraphs_from
+    paragraphs_dict[lang_to] = paragraphs_to
 
-        if direction == "from":
-            curr_paragraph = paragraphs_from_dict[fid][0]
-        else:
-            curr_paragraph = paragraphs_to_dict[tid][0]
+    meta_info = {"items": meta_dict, "main_lang_code": main_lang_code}
 
-        # print("item", item)
-        # print("fid", fid)
-        # print("tid", tid)
-        # print("prev_paragraph", prev_paragraph)
-        # print("curr_paragraph", curr_paragraph)
-
-        curr_h1 = paragraphs_from_dict[fid][1] if direction == "from" else paragraphs_to_dict[tid][1]
-        curr_h2 = paragraphs_from_dict[fid][2] if direction == "from" else paragraphs_to_dict[tid][2]
-        curr_h3 = paragraphs_from_dict[fid][3] if direction == "from" else paragraphs_to_dict[tid][3]
-        curr_h4 = paragraphs_from_dict[fid][4] if direction == "from" else paragraphs_to_dict[tid][4]
-        curr_h5 = paragraphs_from_dict[fid][5] if direction == "from" else paragraphs_to_dict[tid][5]
-        curr_di = paragraphs_from_dict[fid][6] if direction == "from" else paragraphs_to_dict[tid][6]
-
-        if curr_paragraph == prev_paragraph:
-            curr_from.append(texts["text_from"])
-            curr_to.append(texts["text_to"])
-        else:
-            paragraphs_from.append(curr_from)
-            paragraphs_to.append(curr_to)
-
-            prev_paragraph = curr_paragraph
-            curr_from, curr_to = [texts["text_from"]], [texts["text_to"]]
-
-        if curr_h1 != prev_h1:
-            paragraphs_from.append(H1_MARK)
-            paragraphs_to.append(curr_h1-1)
-            prev_h1 = curr_h1
-
-        if curr_h2 != prev_h2:
-            paragraphs_from.append(H2_MARK)
-            paragraphs_to.append(curr_h2-1)
-            prev_h2 = curr_h2
-
-        if curr_h3 != prev_h3:
-            paragraphs_from.append(H3_MARK)
-            paragraphs_to.append(curr_h3-1)
-            prev_h3 = curr_h3
-
-        if curr_h4 != prev_h4:
-            paragraphs_from.append(H4_MARK)
-            paragraphs_to.append(curr_h4-1)
-            prev_h4 = curr_h4
-
-        if curr_h5 != prev_h5:
-            paragraphs_from.append(H5_MARK)
-            paragraphs_to.append(curr_h5-1)
-            prev_h5 = curr_h5
-
-        if curr_di != prev_di:
-            paragraphs_from.append(DIVIDER_MARK)
-            paragraphs_to.append(curr_di-1)
-            prev_di = curr_di
-
-    paragraphs_from.append(curr_from)
-    paragraphs_to.append(curr_to)
-
-    return paragraphs_from, paragraphs_to, meta
+    return paragraphs_dict, par_ids, meta_info, 
 
 
 def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
@@ -322,20 +274,12 @@ def merge_sent_mappings(sent_mapping_dict, lang_codes, target_language_side, mai
 
 def merge_sentences_mapping(sent_mapping_dict, par_ids):
     """Merge sentences mapping according to the weakest paragraph mapping (par_ids)"""
-
-    # print("par_ids", par_ids[:100])
-    # print("len(par_ids)", len(par_ids))
-
-    # return
-
     for target_lang_code in sent_mapping_dict:
         for lang in sent_mapping_dict[target_lang_code]:
             res = [[] for _ in range(len(par_ids))]
 
             curr_par_id = 1
             res[0].extend(sent_mapping_dict[target_lang_code][lang][0][1])
-
-            # len(sent_mapping_dict[target_lang_code][lang]) > curr_par_id and
 
             for i, par_id in enumerate(par_ids[1:]):
                 while len(sent_mapping_dict[target_lang_code][lang]) > curr_par_id and sent_mapping_dict[target_lang_code][lang][curr_par_id][0] <= par_id:
@@ -347,11 +291,6 @@ def merge_sentences_mapping(sent_mapping_dict, par_ids):
                         res[i+1].extend(sent_mapping_dict[target_lang_code]
                                         [lang][curr_par_id][1])
 
-                    # if target_lang_code == "uk" and curr_par_id >=47 and curr_par_id < 49:
-                    #     print("par_id", par_id)
-                    #     print("curr_par_id", sent_mapping_dict[target_lang_code][lang][curr_par_id][0])
-                    #     print("res", res[46:49])
-
                     curr_par_id += 1
 
             # if target_lang_code == "uk" and lang == "ru":
@@ -362,12 +301,9 @@ def merge_sentences_mapping(sent_mapping_dict, par_ids):
 
 def merge_sub_arrays(res, curr, a, b, left, right, len1, len2, to_append):
     """Merge subarrays"""
-
     # a =  [[6,  7], [8], [9,  10, 11, 12],[13,  14,15],[16]]
     # b =  [[6],[7], [8], [9],[10, 11, 12,  13],[14,15,  16]]
-
     # res = [[6, 7], [8], [9, 10, 11, 12, 13, 14, 15, 16]]
-
     if len1 == len2:
         curr.extend(to_append)
         res.append(curr)
@@ -434,8 +370,6 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
 
     prev_paragraph_max = prev_meta_max[0]
 
-    # prev_h1, prev_h2, prev_h3, prev_h4, prev_h5, prev_di = prev_meta[1], prev_meta[2], prev_meta[3], prev_meta[4], prev_meta[5], prev_meta[6]
-
     curr_from, curr_to = [data[0]["text_from"]], [data[0]["text_to"]]
     curr_splitted_ids_from, curr_splitted_ids_to = [json.loads(index[0][0][1])], [
         json.loads(index[0][0][3])]
@@ -453,20 +387,11 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
             curr_paragraph_min = paragraphs_to_dict[tid_min][0]
             curr_paragraph_max = paragraphs_to_dict[tid_max][0]
 
-        # if curr_paragraph_min > 63 and curr_paragraph_min < 67:
-        #     print("tid_min, tid_max", tid_min, tid_max)
-        #     print("curr_paragraph_min", "curr_paragraph_max", curr_paragraph_min, curr_paragraph_max)
-        #     print("prev_paragraph_max", prev_paragraph_max)
-
         if curr_paragraph_min == prev_paragraph_max:
-
             curr_from.append(texts["text_from"])
             curr_to.append(texts["text_to"])
             curr_splitted_ids_from.append(json.loads(item[0][1]))
             curr_splitted_ids_to.append(json.loads(item[0][3]))
-
-            # if curr_paragraph_min == 65 and curr_paragraph_max == 66:
-            #     print(curr_from)
 
             prev_paragraph_max = curr_paragraph_max
 
@@ -481,7 +406,7 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
     yield curr_from, curr_to, prev_paragraph_max, curr_splitted_ids_from, curr_splitted_ids_to
 
 
-def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, styles=[]):
+def create_book(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[]):
     """Generate html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -513,146 +438,53 @@ def create_book(paragraphs_from, paragraphs_to, meta, output_path, template, sty
         res_html.write("<div class='dt cont'>")
 
         #--------------------TITLE and AUTHOR
-        res_html.write("<div class='dt-row header'><div class='par dt-cell'>")
-
-        title_from = get_meta_from(meta, preprocessor.TITLE)
-        if title_from:
-            res_html.write("<h1>" + title_from[0] + "</h1>")
-        author_from = get_meta_from(meta, preprocessor.AUTHOR)
-        if author_from:
-            res_html.write("<h2>" + author_from[0] + "</h2>")
-
-        res_html.write("</div><div class='par dt-cell'>")
-
-        title_to = get_meta_to(meta, preprocessor.TITLE)
-        if title_to:
-            res_html.write("<h1>" + title_to[0] + "</h1>")
-        author_to = get_meta_to(meta, preprocessor.AUTHOR)
-        if author_to:
-            res_html.write("<h2>" + author_to[0] + "</h2>")
-
-        res_html.write("</div></div>")
+        res_html.write("<div class='dt-row header'>")
+        for lang in lang_ordered:
+            res_html.write("<div class='par dt-cell'>")
+            meta = metas["items"][lang]
+            title = get_meta(meta, preprocessor.TITLE)
+            author = get_meta(meta, preprocessor.AUTHOR)
+            if title:
+                res_html.write("<h1 class='lt-title'>" + title + "</h1>")
+            if author:
+                res_html.write("<h1 class='lt-author'>" + author + "</h1>")
+            res_html.write("</div>")
+        res_html.write("</div>")
 
         # --------------------DIVIDER
         res_html.write("<div class='dt-row header'>")
-        res_html.write(
-            "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
+        for _ in range(len(lang_ordered)):
+            res_html.write(
+                "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
         res_html.write("</div>")
 
-        # --------------------FIRST HEADERS IF EXIST
-        write_header(res_html, meta, preprocessor.H1, occurence=0)
-        write_header(res_html, meta, preprocessor.H2, occurence=0)
-        write_header(res_html, meta, preprocessor.H3, occurence=0)
-        write_header(res_html, meta, preprocessor.H4, occurence=0)
-        write_header(res_html, meta, preprocessor.H5, occurence=0)
+        next_mark, next_meta_par_id = get_next_meta_par_id(metas)
+        min_par_len = min([len(paragraphs[x]) for x in paragraphs])
+        min_par_len = min(min_par_len, len(delimeters))
 
-        # --------------------PARAGRAPHS
-        for p_from, p_to in zip(paragraphs_from, paragraphs_to):
+        for actual_paragraphs_id in range(min_par_len):
+            real_par_id = delimeters[actual_paragraphs_id]
 
-            if p_from == H1_MARK:
-                write_header(res_html, meta, preprocessor.H1,
-                             occurence=p_to, add_divider=True)
-            elif p_from == H2_MARK:
-                write_header(res_html, meta, preprocessor.H2,
-                             occurence=p_to, add_divider=True)
-            elif p_from == H3_MARK:
-                write_header(res_html, meta, preprocessor.H3,
-                             occurence=p_to, add_divider=True)
-            elif p_from == H4_MARK:
-                write_header(res_html, meta, preprocessor.H4,
-                             occurence=p_to, add_divider=True)
-            elif p_from == H5_MARK:
-                write_header(res_html, meta, preprocessor.H5,
-                             occurence=p_to, add_divider=True)
+            while next_meta_par_id <= real_par_id:
+                _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
+                next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
-            elif p_from == DIVIDER_MARK:
-                res_html.write("<div class='dt-row header'>")
-                res_html.write(
-                    "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div><div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
+            res_html.write("<div class='dt-row'>")
+            for lang in lang_ordered:
+
+                res_html.write(f"<div class='par dt-cell'>  ")
+
+                for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
+                    res_html.write(
+                        f"<span class='sent sent-{k%sent_cycle}'>{sent}</span>")
+
                 res_html.write("</div>")
-            else:
-                res_html.write("<div class='dt-row'><div class='par dt-cell'>")
-                for i, sent in enumerate(p_from):
-                    res_html.write(
-                        f"<span class='sent sent-{i%sent_cycle}'>{sent}</span>")
-                res_html.write("</div><div class='par dt-cell'>")
-                for i, sent in enumerate(p_to):
-                    res_html.write(
-                        f"<span class='sent sent-{i%sent_cycle}'>{sent}</span>")
-                res_html.write("</div></div>")
 
+            res_html.write("</div>")
+
+        # --------------------END BOOK
         res_html.write("</div>")
         res_html.write("</body></html>")
-
-
-def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, template, styles=[], par_amount=0):
-    """Generate multiligual html preview"""
-    # ensure path is existed
-    langs_count = len(lang_ordered)   
-
-    if template in STYLES:
-        css = generate_css(STYLES[template], cols=langs_count)
-        sent_cycle = len(STYLES[template])
-    elif template == "custom" and styles:
-        css = generate_css(styles, cols=langs_count)
-        sent_cycle = len(styles)
-    else:
-        css = generate_css([], cols=langs_count)
-        template = "simple"
-        sent_cycle = 4
-
-    res_html = ""
-    # --------------------BOOK
-    res_html += "<div class='dt cont'>"
-
-    #--------------------TITLE and AUTHOR
-    res_html += "<div class='dt-row header'>"
-    for lang in lang_ordered:
-        res_html += "<div class='par dt-cell'>"
-        meta = metas["items"][lang]
-        title = get_meta(meta, preprocessor.TITLE)
-        author = get_meta(meta, preprocessor.AUTHOR)
-        if title:
-            res_html += "<h1 class='lt-title'>" + title + "</h1>"
-        if author:
-            res_html += "<h1 class='lt-author'>" + author + "</h1>"
-        res_html += "</div>"
-    res_html += "</div>"
-
-    # --------------------DIVIDER
-    res_html += "<div class='dt-row header'>"
-    for _ in range(langs_count):
-        res_html += "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>"
-    res_html += "</div>"
-
-    # --------------------PARAGRAPHS
-    next_mark, next_meta_par_id = get_next_meta_par_id(metas)
-    min_par_len = min([len(paragraphs[x]) for x in paragraphs])
-    if par_amount > 0:
-        min_par_len = min(min_par_len, par_amount)
-
-    for actual_paragraphs_id in range(min_par_len):
-        real_par_id = delimeters[actual_paragraphs_id]
-
-        while next_meta_par_id <= real_par_id:
-            res_html = write_next_polyheader(res_html, next_mark, metas, lang_ordered, add_string=True)
-            next_mark, next_meta_par_id = get_next_meta_par_id(metas)
-
-        res_html += "<div class='dt-row'>"
-        for lang in lang_ordered:
-
-            res_html += f"<div class='par dt-cell'>"
-
-            for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                res_html += f"<span class='sent sent-{k%sent_cycle} {template}'>{sent}</span>"
-
-            res_html += "</div>"
-
-        res_html += "</div>"
-
-    # --------------------END BOOK
-    res_html += "</div>"
-    return res_html
 
 
 def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[]):
@@ -735,6 +567,76 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         # --------------------END BOOK
         res_html.write("</div>")
         res_html.write("</body></html>")
+
+
+def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, template, styles=[], par_amount=0):
+    """Generate multiligual html preview"""
+    # ensure path is existed
+    langs_count = len(lang_ordered)
+
+    if template in STYLES:
+        css = generate_css(STYLES[template], cols=langs_count)
+        sent_cycle = len(STYLES[template])
+    elif template == "custom" and styles:
+        css = generate_css(styles, cols=langs_count)
+        sent_cycle = len(styles)
+    else:
+        css = generate_css([], cols=langs_count)
+        template = "simple"
+        sent_cycle = 4
+
+    res_html = ""
+    # --------------------BOOK
+    res_html += "<div class='dt cont'>"
+
+    #--------------------TITLE and AUTHOR
+    res_html += "<div class='dt-row header'>"
+    for lang in lang_ordered:
+        res_html += "<div class='par dt-cell'>"
+        meta = metas["items"][lang]
+        title = get_meta(meta, preprocessor.TITLE)
+        author = get_meta(meta, preprocessor.AUTHOR)
+        if title:
+            res_html += "<h1 class='lt-title'>" + title + "</h1>"
+        if author:
+            res_html += "<h1 class='lt-author'>" + author + "</h1>"
+        res_html += "</div>"
+    res_html += "</div>"
+
+    # --------------------DIVIDER
+    res_html += "<div class='dt-row header'>"
+    for _ in range(langs_count):
+        res_html += "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>"
+    res_html += "</div>"
+
+    # --------------------PARAGRAPHS
+    next_mark, next_meta_par_id = get_next_meta_par_id(metas)
+    min_par_len = min([len(paragraphs[x]) for x in paragraphs])
+    if par_amount > 0:
+        min_par_len = min(min_par_len, par_amount)
+
+    for actual_paragraphs_id in range(min_par_len):
+        real_par_id = delimeters[actual_paragraphs_id]
+
+        while next_meta_par_id <= real_par_id:
+            res_html = write_next_polyheader(res_html, next_mark, metas, lang_ordered, add_string=True)
+            next_mark, next_meta_par_id = get_next_meta_par_id(metas)
+
+        res_html += "<div class='dt-row'>"
+        for lang in lang_ordered:
+
+            res_html += f"<div class='par dt-cell'>"
+
+            for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
+                res_html += f"<span class='sent sent-{k%sent_cycle} {template}'>{sent}</span>"
+
+            res_html += "</div>"
+
+        res_html += "</div>"
+
+    # --------------------END BOOK
+    res_html += "</div>"
+    return res_html
 
 
 def get_next_meta_par_id(metas):
@@ -1019,9 +921,9 @@ STYLES = {
         '{"background": "#fefbd6", "color": "black"}'
     ],
     "pastel_start": [
-        '{"background": "linear-gradient(90deg, #cfefd7 0px, #ffffff00 150px)"}',
-        '{"background": "linear-gradient(90deg, #fadce2 0px, #ffffff00 150px)"}',
-        '{"background": "linear-gradient(90deg, #cce7eb 0px, #ffffff00 150px)"}',
-        '{"background": "linear-gradient(90deg, #fefbd6 0px, #ffffff00 150px)"}'
+        '{"background": "linear-gradient(90deg, #cfefd7 0px, #ffffff00 150px)", "border-radius": "15px"}',
+        '{"background": "linear-gradient(90deg, #fadce2 0px, #ffffff00 150px)", "border-radius": "15px"}',
+        '{"background": "linear-gradient(90deg, #cce7eb 0px, #ffffff00 150px)", "border-radius": "15px"}',
+        '{"background": "linear-gradient(90deg, #fefbd6 0px, #ffffff00 150px)", "border-radius": "15px"}'
     ]
 }
