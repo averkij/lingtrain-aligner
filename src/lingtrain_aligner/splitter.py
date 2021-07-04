@@ -3,7 +3,6 @@
 
 import re
 
-# import constants as con
 import razdel
 
 from lingtrain_aligner import preprocessor
@@ -22,6 +21,10 @@ HU_CODE = "hu"
 CZ_CODE = "cz"
 JP_CODE = "jp"
 BA_CODE = "ba"
+KO_CODE = "ko"
+NL_CODE = "nl"
+SW_CODE = "sw"
+UK_CODE = "uk"
 
 XX_CODE = "xx"
 
@@ -41,6 +44,10 @@ LANGUAGES = {
     CZ_CODE: {"name": "Czech"},
     JP_CODE: {"name": "Japanese"},
     BA_CODE: {"name": "Bashkir"},
+    KO_CODE: {"name": "Korean"},
+    SW_CODE: {"name": "Sweden"},
+    NL_CODE: {"name": "Dutch"},
+    UK_CODE: {"name": "Ukrainian"},
 
     XX_CODE: {"name": "Unknown"}
 }
@@ -51,6 +58,7 @@ double_spaces = re.compile(r'[\s]{2,}')
 double_commas = re.compile(r'[,]{2,}')
 double_dash = re.compile(r'[-—]{2,}')
 german_quotes = re.compile(r'[»«“„]+')
+quotes = re.compile(r'[”]+')
 pattern_zh = re.compile(
     r'[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
 pattern_zh_total = re.compile(
@@ -67,7 +75,8 @@ pattern_ru_letters_only = re.compile(r'[^а-яА-Я\s]+')
 DEFAULT_PREPROCESSING = [
     (double_spaces, ' '),
     (double_commas, ','),
-    (double_dash, '—')
+    (double_dash, '—'),
+    (quotes, '"')
 ]
 
 
@@ -88,7 +97,12 @@ def split_zh(line):
 
 def split_jp(line):
     """Split line in Japanese"""
-    return list(re.findall(r'[^!?。！？\.\!\?・]+[!?。！？\.\!\?・]?', line, flags=re.U))
+    res = list(re.findall(r'[^!?。！？\.\!\?]+[!?。！？\.\!\?]?', line, flags=re.U))
+    for i,x in enumerate(res):
+        if x and x[0] == '」':
+            res[i-1] = res[i-1] + '」'
+            res[i] = res[i][1:]
+    return res
 
 
 def preprocess(line, re_list, splitter):
