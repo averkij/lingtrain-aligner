@@ -1,6 +1,7 @@
 """Visualization helper"""
 
 import json
+import logging
 import os
 
 import numpy as np
@@ -52,10 +53,13 @@ def visualize_alignment_by_db(db_path, output_path, lang_name_from="ru", lang_na
             x_min, y_min = min(batch[0]), min(batch[1])
             x_max, y_max = max(batch[0]), max(batch[1])
             align_matrix = np.zeros((x_max-x_min, y_max-y_min))
-            for x, y in zip(batch[0], batch[1]):
-                align_matrix[x-x_min - 1, y-y_min - 1] = 1
-            save_pic(align_matrix, lang_name_to, lang_name_from,
-                     output_path, batch_number=i, size=size, plt_show=plt_show, transparent=transparent_bg)
+            try:
+                for x, y in zip(batch[0], batch[1]):
+                    align_matrix[x-x_min - 1, y-y_min - 1] = 1
+                save_pic(align_matrix, lang_name_to, lang_name_from,
+                        output_path, batch_number=i, size=size, plt_show=plt_show, transparent=transparent_bg)
+            except Exception as e:
+                logging.error(e, exc_info=True)
 
 
 def save_pic(align_matrix, lang_name_to, lang_name_from, output_path, batch_number, size=(260, 260), plt_show=False, transparent=False):
