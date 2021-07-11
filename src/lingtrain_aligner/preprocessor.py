@@ -22,7 +22,7 @@ MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 
 PARAGRAPH_MARK = "%%%%%"
-LINE_ENDINGS = [".","!","?",";",":","。","？","！"] #”
+LINE_ENDINGS = [".","!","?",";",":","。","？","！", '"', "'"] #”
 
 headings_1 = re.compile(r"^часть .*$|^.* band$|^part .*$|^DÍL .*$|^capitolo .*$", re.IGNORECASE)
 headings_2 = re.compile(r"^глава .*$|^.* teil$", re.IGNORECASE)
@@ -143,7 +143,7 @@ def is_date(line):
 
 def mark_paragraphs(lines):
     line_endings = tuple([x for x in LINE_ENDINGS])
-    for i, line in enumerate(lines):        
+    for i, line in enumerate(lines):
         line = line.strip()
         if line.endswith(line_endings):
             lines[i] = line[:-1] + PARAGRAPH_MARK + line[-1]
