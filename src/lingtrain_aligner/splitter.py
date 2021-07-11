@@ -58,7 +58,7 @@ double_spaces = re.compile(r'[\s]{2,}')
 double_commas = re.compile(r'[,]{2,}')
 double_dash = re.compile(r'[-—]{2,}')
 german_quotes = re.compile(r'[»«“„]+')
-quotes = re.compile(r'[”]+')
+quotes = re.compile(r'[“”„‟]+')
 pattern_zh = re.compile(
     r'[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
 pattern_zh_total = re.compile(
@@ -75,8 +75,7 @@ pattern_ru_letters_only = re.compile(r'[^а-яА-Я\s]+')
 DEFAULT_PREPROCESSING = [
     (double_spaces, ' '),
     (double_commas, ','),
-    (double_dash, '—'),
-    (quotes, '"')
+    (double_dash, '—')
 ]
 
 
@@ -103,6 +102,23 @@ def split_jp(line):
             res[i-1] = res[i-1] + '」'
             res[i] = res[i][1:]
     return res
+
+
+def after_fr(lines):
+    """Get French orthography into account"""
+    for i,x in enumerate(lines):
+        if x and x[0] == '»':
+            lines[i-1] = lines[i-1] + ' »'
+            lines[i] = lines[i][1:]
+    return lines
+
+
+def preprocess_raw(lines, re_list):
+    """Preprocess raw file lines"""
+    for i,line in enumerate(lines):
+        for pat, val in re_list:
+            lines[i] = re.sub(pat, val, line)
+    return lines
 
 
 def preprocess(line, re_list, splitter):
@@ -142,7 +158,7 @@ def split_by_sentences_wrapper(lines, langcode):
     marks = preprocessor.get_all_meta_marks()
     for line in lines:
         if any(m in line for m in marks):
-            print("found mark", line)
+            # print("found mark", line)
             if acc:
                 sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode))
                 res.extend(sentences)
@@ -186,6 +202,13 @@ def split_by_sentences(lines, langcode):
             (pattern_jp, '')
         ],
             split_jp)
+        return sentences    
+    if langcode == FR_CODE:
+        sentences = preprocess(line, [
+            *DEFAULT_PREPROCESSING
+        ],
+            split_by_razdel)
+        sentences = after_fr(sentences)
         return sentences
 
     # apply default splitting
@@ -205,6 +228,9 @@ def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=
     with open(raw_path, mode='r', encoding='utf-8') as input_file, open(splitted_path, mode='w', encoding='utf-8') as out_file:
         if is_lang_code_valid(langcode):
             lines = input_file.readlines()
+            lines = preprocess_raw(lines, [
+                (quotes, '"')
+            ])
             if handle_marks:
                 lines = preprocessor.mark_paragraphs(lines)  
                 sentences = split_by_sentences_wrapper(
