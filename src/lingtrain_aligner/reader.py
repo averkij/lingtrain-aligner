@@ -691,30 +691,6 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
     return writer
 
 
-def write_header(writer, meta, mark, occurence, add_divider=False):
-    meta_from = get_meta_from(meta, mark, occurence)
-    meta_to = get_meta_to(meta, mark, occurence)
-    if not meta_to:
-        meta_to = meta_from
-
-    if meta_from:
-        if add_divider:
-            writer.write("<div class='dt-row header'>")
-            writer.write(
-                "<div class='dt-cell divider'></div><div class='dt-cell divider'></div>")
-            writer.write("</div>")
-        # left
-        writer.write("<div class='dt-row header'><div class='par dt-cell'>")
-        writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' +
-                     meta_from[0] + f'</{HEADER_HTML_MAPPING[mark]}>')
-        writer.write("</div>")
-        # right
-        writer.write("<div class='par dt-cell'>")
-        writer.write(f'<{HEADER_HTML_MAPPING[mark]}>' + get_meta_to(meta,
-                                                                    mark, occurence)[0] + f'</{HEADER_HTML_MAPPING[mark]}>')
-        writer.write("</div></div>")
-
-
 def prepare_meta(meta, direction):
     """Take all meta for an exact direction"""
     res = dict()
@@ -796,10 +772,6 @@ CSS_GENERAL = """
     }
 }
 
-# body {
-#     background: #fbfbf8;
-# }
-
 h1, h2, h3, h4, h5 {
     font-family: 'Oswald', cursive;
 }
@@ -814,11 +786,15 @@ h2 {
 }
 
 h3 {
-    font-weight: 300;
+    font-weight: 400;
 }
 
 .cont {
     margin: 0 150px;
+    # background: #fcfcfc;
+    # border: 1px solid #efefef;
+    # border-radius: 10px;
+    # overflow: hidden;
 }
 
 @media print {
@@ -830,7 +806,6 @@ h3 {
 .dt {
     display: table;
 }
-
 .dt-row {
     display: table-row;
 }
@@ -878,6 +853,7 @@ h3 {
 .sent {
     padding: 0 6px;
 }
+
 .text-center {
     text-align: center;
 }
@@ -893,12 +869,14 @@ h3 {
 }
 .lt-image {
     max-height: 300px;
+    max-width: 400px;
 }
 .lt-title {
     font-size: 42px;
 }
 .lt-author {
     font-size: 40px;
+    padding-bottom: 20px;
 }
 
 @media print {
@@ -909,7 +887,6 @@ h3 {
         font-size: 36px;
     }
 }
-
 """
 
 
