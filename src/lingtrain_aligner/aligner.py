@@ -11,6 +11,7 @@ from collections import defaultdict
 import numpy as np
 from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor
 from scipy import spatial
+import version_const as con
 
 to_delete = re.compile(
     r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
@@ -231,11 +232,11 @@ def rewrite_processing_batches(db, data):
         db.execute("delete from processing_from where batch_id=:batch_id", {
             "batch_id": batch_id})
         db.executemany(
-            f"insert into processing_from(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_from])
+            "insert into processing_from(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_from])
         db.execute("delete from processing_to where batch_id=:batch_id", {
             "batch_id": batch_id})
         db.executemany(
-            f"insert into processing_to(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_to])
+            "insert into processing_to(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_to])
     update_batch_progress(db, batch_id)
 
 
@@ -266,6 +267,9 @@ def init_document_db(db_path):
             'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer)')
         db.execute(
             'create table languages(id integer primary key, key text, val text)')
+        db.execute(
+            'create table version(id integer primary key, version text)')
+        db.execute('insert into version(version) values (?)', (con.DB_VERSION,))
 
 
 def fill_db_from_files(db_path, lang_from, lang_to, splitted_from, splitted_to, proxy_from, proxy_to):
