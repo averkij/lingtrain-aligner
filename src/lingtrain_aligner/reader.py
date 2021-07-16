@@ -1,3 +1,4 @@
+from collections import defaultdict
 from lingtrain_aligner import helper, preprocessor
 import json
 import pathlib
@@ -33,13 +34,19 @@ def get_paragraphs(db_path, direction="from"):
     index = helper.get_flatten_doc_index(db_path)
     page = list(zip(index, range(len(index))))
 
-    data, _, __ = helper.get_doc_items(page, db_path)
+    data, _, __ = helper.get_doc_items(page, db_path)    
+    lang_from, lang_to = helper.get_lang_codes(db_path)
 
     # extract paragraph info
     from_ids, to_ids = set(), set()
+    sent_counter_dict = defaultdict(int)
     for item in index:
-        from_ids.update(json.loads(item[0][1]))
-        to_ids.update(json.loads(item[0][3]))
+        from_json = json.loads(item[0][1])
+        to_json = json.loads(item[0][3])
+        from_ids.update(from_json)
+        to_ids.update(to_json)
+        sent_counter_dict[lang_from] += len(from_json)
+        sent_counter_dict[lang_to] += len(to_json)
 
     splitted_from = helper.get_splitted_from_by_id(db_path, from_ids)
     splitted_to = helper.get_splitted_to_by_id(db_path, to_ids)
@@ -48,7 +55,6 @@ def get_paragraphs(db_path, direction="from"):
     paragraphs_to_dict = helper.get_paragraph_dict(splitted_to)
 
     meta = helper.get_meta_dict(db_path)
-    lang_from, lang_to = helper.get_lang_codes(db_path)
     meta_dict, paragraphs_dict = dict(), dict()
     meta_dict[lang_from] = prepare_meta(meta, "from")
     meta_dict[lang_to] = prepare_meta(meta, "to")
@@ -68,7 +74,7 @@ def get_paragraphs(db_path, direction="from"):
 
     meta_info = {"items": meta_dict, "main_lang_code": main_lang_code}
 
-    return paragraphs_dict, par_ids, meta_info, 
+    return paragraphs_dict, par_ids, meta_info, sent_counter_dict
 
 
 def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
@@ -406,7 +412,7 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
     yield curr_from, curr_to, prev_paragraph_max, curr_splitted_ids_from, curr_splitted_ids_to
 
 
-def create_book(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[]):
+def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, output_path, template, styles=[]):
     """Generate html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -420,22 +426,39 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, output_path, templa
     else:
         css = generate_css([])
         sent_cycle = 2
+    
+    min_par_len = min([len(paragraphs[x]) for x in paragraphs])
+    min_par_len = min(min_par_len, len(delimeters))
+
+    header_text = ""
+    for i, lang in enumerate(lang_ordered):
+        header_text += f"{sent_counter[lang]} sent. [{lang}] "
+        if i == 0:
+            header_text += "• "
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
         res_html.write(f"""
-        <html><head>
-            <link rel="stylesheet" href="main.css">
-            <link rel="preconnect" href="https://fonts.gstatic.com">
-            <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
-            <title>Lingtrain Magic Book</title>
-            {css}
-        </head>
-        <body>""")
+<html><head>
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans&display=swap" rel="stylesheet">
+    <title>Lingtrain Magic Book</title>
+    {css}
+</head>
+<body>
+<div class="lt-header">🚀 lingtrain parallel book 🡒 {header_text} 🡒 {min_par_len} paragpaphs</div>""")
 
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
+
+        # --------------------DIVIDER
+        res_html.write("<div class='dt-row header'>")
+        for _ in range(len(lang_ordered)):
+            res_html.write(
+                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>")
+        res_html.write("</div>")
 
         #--------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header'>")
@@ -451,16 +474,7 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, output_path, templa
             res_html.write("</div>")
         res_html.write("</div>")
 
-        # --------------------DIVIDER
-        res_html.write("<div class='dt-row header'>")
-        for _ in range(len(lang_ordered)):
-            res_html.write(
-                "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
-        res_html.write("</div>")
-
         next_mark, next_meta_par_id = get_next_meta_par_id(metas)
-        min_par_len = min([len(paragraphs[x]) for x in paragraphs])
-        min_par_len = min(min_par_len, len(delimeters))
 
         for actual_paragraphs_id in range(min_par_len):
             real_par_id = delimeters[actual_paragraphs_id]
@@ -476,14 +490,18 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, output_path, templa
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                     res_html.write(
-                        f"<span class='sent sent-{k%sent_cycle}'>{sent}</span>")
+                        f"<span class='s s{k%sent_cycle}'>{sent}</span>")
 
                 res_html.write("</div>")
 
             res_html.write("</div>")
 
+        while next_mark:
+            _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
+            next_mark, next_meta_par_id = get_next_meta_par_id(metas)
+
         # --------------------END BOOK
-        res_html.write("</div>")
+        res_html.write(f"</div>{HTML_FOOTER}")
         res_html.write("</body></html>")
 
 
@@ -506,18 +524,26 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
         res_html.write(f"""
-        <html><head>
-            <link rel="stylesheet" href="main.css">
-            <link rel="preconnect" href="https://fonts.gstatic.com">
-            <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
-            <title>Lingtrain Magic Book</title>
-            {css}
-        </head>
-        <body>""")
+<html><head>
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans&display=swap" rel="stylesheet">
+    <title>Lingtrain Magic Book</title>
+    {css}
+</head>
+<body>
+<div class="lt-header">🚀 created in lingtrain alignment studio</div>""")
 
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
+
+        # --------------------DIVIDER
+        res_html.write("<div class='dt-row header'>")
+        for _ in range(langs_count):
+            res_html.write(
+                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>")
+        res_html.write("</div>")
 
         #--------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header'>")
@@ -531,13 +557,6 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
             if author:
                 res_html.write("<h1 class='lt-author'>" + author + "</h1>")
             res_html.write("</div>")
-        res_html.write("</div>")
-
-        # --------------------DIVIDER
-        res_html.write("<div class='dt-row header'>")
-        for _ in range(langs_count):
-            res_html.write(
-                "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>")
         res_html.write("</div>")
 
         # --------------------PARAGRAPHS
@@ -558,14 +577,18 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                     res_html.write(
-                        f"<span class='sent sent-{k%sent_cycle}'>{sent}</span>")
+                        f"<span class='s s{k%sent_cycle}'>{sent}</span>")
 
                 res_html.write("</div>")
 
             res_html.write("</div>")
 
+        while next_mark:
+            _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
+            next_mark, next_meta_par_id = get_next_meta_par_id(metas)
+
         # --------------------END BOOK
-        res_html.write("</div>")
+        res_html.write(f"</div>{HTML_FOOTER}")
         res_html.write("</body></html>")
 
 
@@ -589,6 +612,13 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
     # --------------------BOOK
     res_html += "<div class='dt cont'>"
 
+
+    # --------------------DIVIDER
+    res_html += "<div class='dt-row header'>"
+    for _ in range(langs_count):
+        res_html += f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+    res_html += "</div>"
+
     #--------------------TITLE and AUTHOR
     res_html += "<div class='dt-row header'>"
     for lang in lang_ordered:
@@ -601,12 +631,6 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         if author:
             res_html += "<h1 class='lt-author'>" + author + "</h1>"
         res_html += "</div>"
-    res_html += "</div>"
-
-    # --------------------DIVIDER
-    res_html += "<div class='dt-row header'>"
-    for _ in range(langs_count):
-        res_html += "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>"
     res_html += "</div>"
 
     # --------------------PARAGRAPHS
@@ -628,7 +652,7 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
             res_html += f"<div class='par dt-cell'>"
 
             for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                res_html += f"<span class='sent sent-{k%sent_cycle} {template}'>{sent}</span>"
+                res_html += f"<span class='s s{k%sent_cycle} {template}'>{sent}</span>"
 
             res_html += "</div>"
 
@@ -673,7 +697,7 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
         elif next_mark == preprocessor.IMAGE:
             el = f"<div class='par dt-cell text-center'><img class='lt-image' src='{val[0]}'/></div>"
         elif next_mark == preprocessor.DIVIDER:
-            el = "<div class='dt-cell divider'><img class='divider-img' src='https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png'/></div>"
+            el = f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
         else:
             el = f"<div class='par dt-cell'><{HEADER_HTML_MAPPING[next_mark]}>{val[0]}</{HEADER_HTML_MAPPING[next_mark]}></div>"
 
@@ -728,7 +752,7 @@ def generate_css(styles, cols=2):
     special = ""
     for i, s in enumerate(styles):
         style = json.loads(s)
-        special += f".sent-{i} {{\n"
+        special += f".s{i} {{\n"
         for rule in style:
             special += f"{rule}: {style[rule]};"
         special += "\n}"
@@ -746,6 +770,12 @@ HEADER_HTML_MAPPING = {
     preprocessor.H4: "h4",
     preprocessor.H5: "h4"
 }
+
+# DIVIDER_URL = "https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png"
+DIVIDER_URL = "https://habrastorage.org/webt/q9/1t/cy/q91tcypgjnrrsmrfcviyzzdvfsk.png"
+
+HTML_FOOTER = """
+<div class="lt-footer">🚀 created in lingtrain alignment studio</div>"""
 
 CSS_TEMPLATE = """<style type="text/css">
 %GENERAL%
@@ -837,7 +867,8 @@ h3 {
 }
 
 .divider-img {
-    width: 100px;
+    width: 50px;
+    height: 50px;
 }
 
 .flag-img {
@@ -850,7 +881,7 @@ h3 {
     display: inline-block;
 }
 
-.sent {
+.s {
     padding: 0 6px;
 }
 
@@ -869,23 +900,52 @@ h3 {
 }
 .lt-image {
     max-height: 300px;
-    max-width: 400px;
+    max-width: 800px;
 }
 .lt-title {
-    font-size: 42px;
+    font-size: 52px;
+    text-align: center;
 }
 .lt-author {
     font-size: 40px;
-    padding-bottom: 20px;
+    text-align: center;
 }
 
 @media print {
     .lt-title {
-        font-size: 36px;
+        font-size: 32px;
     }
     .lt-author {
-        font-size: 36px;
+        font-size: 28px;
     }
+    .lt-image {
+        max-height: 260px;
+        max-width: 400px;
+    }
+    .divider-img {
+        height: 30px;
+        width: 30px;
+    }
+}
+
+.lt-footer {
+    padding: 20px 0;
+    margin-top: 30px;
+    text-align:center;
+    font-family: 'Josefin Sans', sans-serif;
+    text-transform: capitalize;
+    color: white;
+    background: cornflowerblue;
+}
+
+.lt-header {
+    padding: 20px 0;
+    margin-bottom: 30px;
+    text-align:center;
+    font-family: 'Josefin Sans', sans-serif;
+    text-transform: capitalize;
+    color: white;
+    background: cornflowerblue;
 }
 """
 
