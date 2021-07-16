@@ -9,9 +9,8 @@ import sqlite3
 from collections import defaultdict
 
 import numpy as np
-from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor
+from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor, constants as con
 from scipy import spatial
-import version_const as con
 
 to_delete = re.compile(
     r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
@@ -104,7 +103,7 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
         print("batch:", count)
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
                                              line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path)
-        result.append((batch_id, texts_from, texts_to))
+        result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 
     if not result:
@@ -183,13 +182,13 @@ def get_sim_matrix(vec1, vec2, window):
 
 def save_db(db_path, data):
     with sqlite3.connect(db_path) as db:
-        rewrite_processing_batches(db, data)
+        write_processing_batches(db, data)
         create_doc_index(db, data)
 
 
 def create_doc_index(db, data):
     """Create document index in database"""
-    batch_ids = [batch_id for batch_id, x, y in data]
+    batch_ids = [batch_id for batch_id, _, _, _, _ in data]
 
     max_batch_id = max(batch_ids)
     doc_index = get_doc_index(db)
@@ -226,9 +225,9 @@ def get_doc_index(db):
     return res
 
 
-def rewrite_processing_batches(db, data):
+def write_processing_batches(db, data):
     """Insert or rewrite batched data"""
-    for batch_id, texts_from, texts_to in data:
+    for batch_id, texts_from, texts_to, shift, window in data:
         db.execute("delete from processing_from where batch_id=:batch_id", {
             "batch_id": batch_id})
         db.executemany(
@@ -237,13 +236,16 @@ def rewrite_processing_batches(db, data):
             "batch_id": batch_id})
         db.executemany(
             "insert into processing_to(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_to])
-    update_batch_progress(db, batch_id)
+        db.execute(
+            "insert or replace into batches (batch_id, insert_ts, shift, window) values (?, datetime('now'), ?, ?)", (batch_id, shift, window))
 
 
-def update_batch_progress(db, batch_id):
+def update_history(db_path, batch_ids, operation, parameters):
     """Update batches table with already processed batches IDs"""
-    db.execute(
-        "insert or ignore into batches (batch_id, insert_ts) values (?, datetime('now'))", (batch_id,))
+    parameters = json.dumps(parameters)
+    with sqlite3.connect(db_path) as db:
+        db.executemany(
+            "insert into history(operation, batch_id, parameters, insert_ts) values (?,?,?, datetime('now'))", [(operation, batch_id, parameters) for batch_id in batch_ids])
 
 
 def init_document_db(db_path):
@@ -262,7 +264,9 @@ def init_document_db(db_path):
         db.execute(
             'create table doc_index(id integer primary key, contents varchar)')
         db.execute(
-            'create table batches(id integer primary key, batch_id integer unique, insert_ts text)')
+            'create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)')
+        db.execute(
+            'create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)')
         db.execute(
             'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer)')
         db.execute(
