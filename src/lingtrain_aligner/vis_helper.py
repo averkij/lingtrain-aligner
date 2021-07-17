@@ -9,7 +9,7 @@ from lingtrain_aligner import helper
 from matplotlib import pyplot as plt
 
 
-def visualize_alignment_by_db(db_path, output_path, lang_name_from="ru", lang_name_to="de", batch_size=0, size=(260, 260), batch_ids=[], plt_show=False, transparent_bg=False):
+def visualize_alignment_by_db(db_path, output_path, lang_name_from="ru", lang_name_to="de", batch_size=0, size=(260, 260), batch_ids=[], plt_show=False, transparent_bg=False, plot_batch_info=False):
     """Visualize alignment using ids from the database"""
     if batch_size > 0:
         index = helper.get_clear_flatten_doc_index(db_path)
@@ -56,13 +56,18 @@ def visualize_alignment_by_db(db_path, output_path, lang_name_from="ru", lang_na
             try:
                 for x, y in zip(batch[0], batch[1]):
                     align_matrix[x-x_min - 1, y-y_min - 1] = 1
+                shift, window = None, None
+                if plot_batch_info:
+                    shift, window = helper.get_batch_info(db_path, i)
+                    print("batch_id", i)
+                    print(shift, window)
                 save_pic(align_matrix, lang_name_to, lang_name_from,
-                        output_path, batch_number=i, size=size, plt_show=plt_show, transparent=transparent_bg)
+                        output_path, batch_number=i, size=size, plt_show=plt_show, transparent=transparent_bg, shift=shift, window=window)
             except Exception as e:
                 logging.error(e, exc_info=True)
 
 
-def save_pic(align_matrix, lang_name_to, lang_name_from, output_path, batch_number, size=(260, 260), plt_show=False, transparent=False):
+def save_pic(align_matrix, lang_name_to, lang_name_from, output_path, batch_number, size=(260, 260), plt_show=False, transparent=False, shift=None, window=None):
     """Save the resulted picture"""
     output = "{0}_{1}{2}".format(os.path.splitext(output_path)[
                                  0], batch_number, os.path.splitext(output_path)[1])
@@ -74,6 +79,11 @@ def save_pic(align_matrix, lang_name_to, lang_name_from, output_path, batch_numb
     plt.ylabel(lang_name_from, fontsize=12, labelpad=-18)
     plt.tick_params(axis='both', which='both', bottom=False, top=False,
                     labelbottom=False, right=False, left=False, labelleft=False)
+
+    if shift is not None and window is not None:
+        print("adding text")
+        plt.text(0.0, -0.1, f"s={shift}, w={window}", fontsize = 8, transform=plt.gca().transAxes, c="black")
+        
     plt.savefig(output, dpi=my_dpi, transparent=transparent)  
     # plt.savefig(output, bbox_inches="tight", pad_inches=0, dpi=my_dpi)
     if plt_show:

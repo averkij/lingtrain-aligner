@@ -108,7 +108,8 @@ def get_splitted_from_by_id(db_path, ids):
         for id, text_from, proxy_from, exclude, paragraph, h1, h2, h3, h4, h5, divider in db.execute(
             f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
         ):
-            res.append((id, text_from, proxy_from, exclude, paragraph, h1, h2, h3, h4, h5, divider))
+            res.append((id, text_from, proxy_from, exclude,
+                        paragraph, h1, h2, h3, h4, h5, divider))
     return res
 
 
@@ -119,7 +120,8 @@ def get_splitted_to_by_id(db_path, ids):
         for id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider in db.execute(
             f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
-            res.append((id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider))
+            res.append((id, text_to, proxy_to, exclude,
+                        paragraph, h1, h2, h3, h4, h5, divider))
     return res
 
 
@@ -158,7 +160,7 @@ def get_splitted_from(db_path, ids=[]):
                 res[id] = text_from
         else:
             for id, text_from in db.execute(
-            f'select f.id, f.text from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
+                f'select f.id, f.text from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
             ):
                 res[id] = text_from
     return res
@@ -175,7 +177,7 @@ def get_splitted_to(db_path, ids=[]):
                 res[id] = text_to
         else:
             for id, text_to in db.execute(
-            f'select t.id, t.text from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
+                f'select t.id, t.text from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
             ):
                 res[id] = text_to
     return res
@@ -221,7 +223,8 @@ def get_paragraph_dict(items):
     """Get paragraphs info as dict"""
     res = dict()
     for item in items:
-        res[item[0]] = (item[4], item[5], item[6], item[7], item[8], item[9], item[10])
+        res[item[0]] = (item[4], item[5], item[6], item[7],
+                        item[8], item[9], item[10])
     return res
 
 
@@ -281,7 +284,7 @@ def read_processing(db_path):
                 """).fetchall()
         if not res:
             return [], []
-        res = [list(x) for x in zip(*res)] 
+        res = [list(x) for x in zip(*res)]
         return res[0], res[1]
 
 
@@ -296,7 +299,7 @@ def get_meta_dict(db_path):
 
 def get_meta(db_path, mark, direction, occurence):
     """Get book meta information"""
-    direction = "from" if direction=="from" else "to"
+    direction = "from" if direction == "from" else "to"
     with sqlite3.connect(db_path) as db:
         res = db.execute(
             f'select m.val from meta m where m.key="{mark}_{direction}" and occurence={occurence}').fetchone()
@@ -316,8 +319,10 @@ def get_meta_to(db_path, mark, occurence):
 def get_lang_codes(db_path):
     """Get languages information"""
     with sqlite3.connect(db_path) as db:
-        lang_from = db.execute(f'select l.val from languages l where l.key="from"').fetchone()
-        lang_to = db.execute(f'select l.val from languages l where l.key="to"').fetchone()
+        lang_from = db.execute(
+            f'select l.val from languages l where l.key="from"').fetchone()
+        lang_to = db.execute(
+            f'select l.val from languages l where l.key="to"').fetchone()
     return lang_from[0], lang_to[0]
 
 
@@ -337,15 +342,27 @@ def get_processing_to(db_path):
     return [x[0] for x in res]
 
 
+def get_batch_info(db_path, batch_id):
+    """Get batch alignment parameters"""
+    with sqlite3.connect(db_path) as db:
+        shift, window = db.execute(
+            f'select b.shift, b.window from batches b where b.batch_id=:batch_id', {"batch_id": batch_id}).fetchone()
+    if shift is not None:
+        return shift, window
+    return None, None
+
+
 def get_unique_variants(variants_ids):
+    """Get unique variants"""
     res = set()
-    for variant_ids in variants_ids:
-        for ids in variant_ids:
+    for var_ids in variants_ids:
+        for ids in var_ids:
             res.add(ids)
     return res
 
 
 def get_string(dic, ids):
+    """Join into string"""
     s = " ".join([dic[x] for x in ids])
     return s
 
