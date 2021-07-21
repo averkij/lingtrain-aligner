@@ -685,6 +685,15 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
     else:
         writer.write("<div class='dt-row header'>")
     for lang in lang_ordered:
+        #divider is a special case
+        if next_mark == preprocessor.DIVIDER:
+            el = f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+            if next_mark in metas[lang] and metas[lang][next_mark]:
+                metas[lang][next_mark].pop(0)
+            if add_string: writer += el
+            else: writer.write(el)
+            continue
+
         meta = metas[lang][next_mark]
         if meta:
             val = meta.pop(0)
@@ -696,8 +705,6 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
             el = f"<div class='par dt-cell'><div class='lt-quote lt-quote-name'>{val[0]}</div></div>"
         elif next_mark == preprocessor.IMAGE:
             el = f"<div class='par dt-cell text-center'><img class='lt-image' src='{val[0]}'/></div>"
-        elif next_mark == preprocessor.DIVIDER:
-            el = f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
         else:
             el = f"<div class='par dt-cell'><{HEADER_HTML_MAPPING[next_mark]}>{val[0]}</{HEADER_HTML_MAPPING[next_mark]}></div>"
 
