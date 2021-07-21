@@ -25,7 +25,7 @@ def clean_lines(lines):
     return [re.sub(to_delete, '', line) for line in lines]
 
 
-def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path=""):
+def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path="", show_info=False, show_regression=False):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
@@ -45,10 +45,13 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     sim_matrix = get_sim_matrix(vectors1, vectors2, window)
     sim_matrix_best = best_per_row_with_ones(sim_matrix)
 
+    x_min, y_min = min(line_ids_from), min(line_ids_to)
+    x_max, y_max = max(line_ids_from), max(line_ids_to)
+
     # save picture
     if save_pic:
         vis_helper.save_pic(sim_matrix_best, lang_name_to,
-                            lang_name_from, img_path, batch_number, transparent=True)
+                            lang_name_from, img_path, batch_number, (x_min, x_max), (y_min, y_max), transparent=True, show_info=show_info, show_regression=show_regression)
 
     best_sim_ind = sim_matrix_best.argmax(1)
     texts_from = []
@@ -71,7 +74,7 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     #     return [], []
 
 
-def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0):
+def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False):
     result = []
     task_list = [(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id)
                  for lines_from_batch, lines_to_batch,
@@ -80,7 +83,7 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
 
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path)
+                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression)
         result.append((batch_id, texts_from, texts_to))
 
     # sort by batch_id (will be useful with parallel processing)
@@ -89,7 +92,7 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
     return result
 
 
-def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0):
+def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
@@ -102,7 +105,7 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         print("batch:", count)
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path)
+                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression)
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 
@@ -439,7 +442,9 @@ def update_mark_counter(marks_counter, line, mark):
 def get_mark_value(line, mark):
     res = ''
     ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
-    if line.endswith(ending):
+    if line.endswith(ending):        
+        if mark == preprocessor.DIVIDER:
+            return '* * *'
         res = line[:len(line)-len(ending)]
     return res
 

@@ -108,10 +108,6 @@ def get_conflicts(chains_from, chains_to, max_len=6):
 
 def get_variants(conflict, show_logs=False):
     """Get resolving variants"""
-    len_from = conflict["from"]["end"][0] - conflict["from"]["start"][0] + 1
-    len_to = conflict["to"]["end"][0] - conflict["to"]["start"][0] + 1
-    c_type = f"{len_from}:{len_to}"
-
     ids_from = [x for x in range(
         conflict["from"]["start"][0], conflict["from"]["end"][0] + 1)]
     ids_to = [x for x in range(
@@ -125,15 +121,13 @@ def get_variants(conflict, show_logs=False):
     groups = min(len(ids_from), len(ids_to))
     res = []
     if len(ids_from) < len(ids_to):
-        squash_side = "to"
         grouped_subs = [x for x in mit.partitions(ids_to) if len(x) == groups]
-        for i, sub in enumerate(grouped_subs):
+        for _, sub in enumerate(grouped_subs):
             res.append([((a,), tuple(b)) for a, b in zip(ids_from, sub)])
     else:
-        squash_side = "from"
         grouped_subs = [x for x in mit.partitions(
             ids_from) if len(x) == groups]
-        for i, sub in enumerate(grouped_subs):
+        for _, sub in enumerate(grouped_subs):
             res.append([(tuple(a), (b,)) for a, b in zip(sub, ids_to)])
     return res
 
