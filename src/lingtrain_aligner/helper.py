@@ -292,7 +292,7 @@ def get_meta_dict(db_path):
     """Get all the meta information as dict"""
     res = defaultdict(list)
     with sqlite3.connect(db_path) as db:
-        for key, val, occurence, par_id in db.execute(f'select m.key, m.val, m.occurence, m.par_id from meta m'):
+        for key, val, occurence, par_id in db.execute(f'select m.key, m.val, m.occurence, m.par_id from meta m order by m.key, m.occurence'):
             res[key].append((val, occurence, par_id))
     return res
 
@@ -304,6 +304,29 @@ def get_meta(db_path, mark, direction, occurence):
         res = db.execute(
             f'select m.val from meta m where m.key="{mark}_{direction}" and occurence={occurence}').fetchone()
     return res[0] if res else ''
+
+
+def add_meta(db_path, mark, val_from, val_to, par_id_from, par_id_to):
+    with sqlite3.connect(db_path) as db:
+        query = db.execute(
+            f'select max(m.occurence) from meta m where m.key="{mark}_from" and par_id <= {par_id_from}').fetchone()
+        max_from_occurence = query[0] if query[0] is not None else -1
+        print(query, max_from_occurence)
+        query = db.execute(
+            f'select max(m.occurence) from meta m where m.key="{mark}_to" and par_id <= {par_id_to}').fetchone()
+        max_to_occurence = query[0] if query[0] is not None else -1
+        
+        #increment occurence
+        db.execute(
+            f'update meta set occurence = occurence + 1 where key="{mark}_from" and occurence > {max_from_occurence}')
+        db.execute(
+            f'update meta set occurence = occurence + 1 where key="{mark}_to" and occurence > {max_to_occurence}')
+
+        print(query, max_to_occurence)
+        data = [(f"{mark}_from", val_from, max_from_occurence + 1, par_id_from), (f"{mark}_to", val_to, max_to_occurence + 1, par_id_to)]
+        db.executemany('insert into meta(key, val, occurence, par_id) values(?, ?, ?, ?)', [
+                       (key, val, occurence, par_id) for key, val, occurence, par_id in data])
+    return
 
 
 def get_meta_from(db_path, mark, occurence):

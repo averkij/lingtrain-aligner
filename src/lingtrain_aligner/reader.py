@@ -486,7 +486,7 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
 
-                res_html.write(f"<div class='par dt-cell'>  ")
+                res_html.write(f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id}</div>")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                     res_html.write(
@@ -649,7 +649,7 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         res_html += "<div class='dt-row'>"
         for lang in lang_ordered:
 
-            res_html += f"<div class='par dt-cell'>"
+            res_html += f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id}</div>"
 
             for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                 res_html += f"<span class='s s{k%sent_cycle} {template}'>{sent}</span>"
@@ -845,6 +845,7 @@ h3 {
 }
 .dt-row {
     display: table-row;
+    position: relative;
 }
 
 # .dt-row:nth-child(even):not(.header) {
@@ -854,6 +855,19 @@ h3 {
 .dt-row:nth-child(even):not(.header) > .dt-cell:not(.divider) {
     border-top: 1px solid #f0f0f0;
     border-bottom: 1px solid #f0f0f0;
+}
+
+.dt-row:hover > .dt-cell > .book-par-id {
+    opacity: 1;
+}
+
+.book-par-id {
+    position: absolute;
+    left: -20px;
+    top: 0;
+    font-size: 12px;
+    opacity: 0;
+    font-weight: 600;
 }
 
 .dt-cell {
