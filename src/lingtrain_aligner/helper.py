@@ -292,8 +292,8 @@ def get_meta_dict(db_path):
     """Get all the meta information as dict"""
     res = defaultdict(list)
     with sqlite3.connect(db_path) as db:
-        for key, val, occurence, par_id in db.execute(f'select m.key, m.val, m.occurence, m.par_id from meta m order by m.key, m.occurence'):
-            res[key].append((val, occurence, par_id))
+        for key, val, occurence, par_id, id in db.execute(f'select m.key, m.val, m.occurence, m.par_id, m.id from meta m where m.deleted = 0'):
+            res[key].append((val, occurence, par_id, id))
     return res
 
 
@@ -302,30 +302,60 @@ def get_meta(db_path, mark, direction, occurence):
     direction = "from" if direction == "from" else "to"
     with sqlite3.connect(db_path) as db:
         res = db.execute(
-            f'select m.val from meta m where m.key="{mark}_{direction}" and occurence={occurence}').fetchone()
+            f'select m.val from meta m where m.key="{mark}_{direction}" and occurence={occurence} and m.deleted = 0').fetchone()
     return res[0] if res else ''
 
 
 def add_meta(db_path, mark, val_from, val_to, par_id_from, par_id_to):
     with sqlite3.connect(db_path) as db:
         query = db.execute(
-            f'select max(m.occurence) from meta m where m.key="{mark}_from" and par_id <= {par_id_from}').fetchone()
+            f'select max(m.occurence) from meta m where m.key=(?) and par_id <= (?)', (f"{mark}_from", par_id_from)).fetchone()
         max_from_occurence = query[0] if query[0] is not None else -1
         print(query, max_from_occurence)
         query = db.execute(
-            f'select max(m.occurence) from meta m where m.key="{mark}_to" and par_id <= {par_id_to}').fetchone()
+            f'select max(m.occurence) from meta m where m.key=(?) and par_id <= (?)', (f"{mark}_to", par_id_to)).fetchone()
         max_to_occurence = query[0] if query[0] is not None else -1
         
         #increment occurence
         db.execute(
-            f'update meta set occurence = occurence + 1 where key="{mark}_from" and occurence > {max_from_occurence}')
+            f'update meta set occurence = occurence + 1 where key=(?) and occurence > (?)', (f"{mark}_from", max_from_occurence))
         db.execute(
-            f'update meta set occurence = occurence + 1 where key="{mark}_to" and occurence > {max_to_occurence}')
+            f'update meta set occurence = occurence + 1 where key=(?) and occurence > (?)', (f"{mark}_to", max_to_occurence))
 
         print(query, max_to_occurence)
         data = [(f"{mark}_from", val_from, max_from_occurence + 1, par_id_from), (f"{mark}_to", val_to, max_to_occurence + 1, par_id_to)]
         db.executemany('insert into meta(key, val, occurence, par_id) values(?, ?, ?, ?)', [
                        (key, val, occurence, par_id) for key, val, occurence, par_id in data])
+    return
+
+
+def delete_meta(db_path, mark_id):
+    """Mark meta as deleted"""
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            f'update meta set deleted = 1 where id=(?)', (mark_id,))
+    return
+
+
+def edit_meta(db_path, mark, direction, mark_id, par_id, val):
+    """Edit meta"""
+    meta_key = f"{mark}_{direction}"
+    with sqlite3.connect(db_path) as db:
+        curr_par_id = db.execute(
+                f'select par_id from meta m where m.id=(?)', (mark_id,)).fetchone()[0]
+        if curr_par_id == par_id:
+            print("par ids are equal")
+            db.execute(
+                f'update meta set val=(?) where id=(?)', (val, mark_id))
+        else:
+            query = db.execute(
+                f'select max(m.occurence) from meta m where m.key=(?) and par_id <= (?)', (meta_key, par_id)).fetchone()
+            max_occurence = query[0] if query[0] is not None else -1
+            #increment occurence
+            db.execute(
+                f'update meta set occurence = occurence + 1 where key=(?) and occurence > (?)', (meta_key, max_occurence))
+            db.execute(
+                f'update meta set val=(?), par_id=(?) where id=(?)', (val, par_id, mark_id))
     return
 
 

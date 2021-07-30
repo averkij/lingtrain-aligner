@@ -271,7 +271,7 @@ def init_document_db(db_path):
         db.execute(
             'create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)')
         db.execute(
-            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer)')
+            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0)')
         db.execute(
             'create table languages(id integer primary key, key text, val text)')
         db.execute(
@@ -404,7 +404,7 @@ def handle_marks(lines):
     for line in lines:
         next_par = False
         line = line.strip()
-        
+
         if line.endswith(p_ending):
             #remove last occurence of PARAGRAPH_MARK
             line = ''.join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))

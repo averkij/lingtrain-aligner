@@ -3,6 +3,7 @@ from lingtrain_aligner import helper, preprocessor
 import json
 import pathlib
 import copy
+from operator import itemgetter
 
 H1_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H1
 H2_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H2
@@ -412,6 +413,12 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
     yield curr_from, curr_to, prev_paragraph_max, curr_splitted_ids_from, curr_splitted_ids_to
 
 
+def sort_meta(metas):
+    for lang in metas["items"]:
+        for mark in metas["items"][lang]:
+            metas["items"][lang][mark].sort(key=lambda x: x[2])
+
+
 def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, output_path, template, styles=[]):
     """Generate html"""
     # ensure path is existed
@@ -427,6 +434,8 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
         css = generate_css([])
         sent_cycle = 2
     
+    meta = sort_meta(metas)
+
     min_par_len = min([len(paragraphs[x]) for x in paragraphs])
     min_par_len = min(min_par_len, len(delimeters))
 
@@ -486,7 +495,7 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
 
-                res_html.write(f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id}</div>")
+                res_html.write(f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                     res_html.write(
@@ -520,6 +529,8 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
     else:
         css = generate_css([], cols=langs_count)
         sent_cycle = 2
+
+    meta = sort_meta(metas)
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
@@ -608,6 +619,8 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         template = "simple"
         sent_cycle = 4
 
+    meta = sort_meta(metas)
+
     res_html = ""
     # --------------------BOOK
     res_html += "<div class='dt cont'>"
@@ -649,7 +662,7 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         res_html += "<div class='dt-row'>"
         for lang in lang_ordered:
 
-            res_html += f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id}</div>"
+            res_html += f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
 
             for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                 res_html += f"<span class='s s{k%sent_cycle} {template}'>{sent}</span>"
@@ -668,11 +681,14 @@ def get_next_meta_par_id(metas):
     meta = metas["items"][lang_code]
     min_par_id = float('Inf')
     next_mark = ""
+
     for mark in MARKS:
         if mark in meta and meta[mark]:
-            if meta[mark][0][2] < min_par_id:
+            gen = (x for x in meta[mark])
+            min_par_mark = min(gen, key=itemgetter(2))
+            if min_par_mark[2] < min_par_id:
                 next_mark = mark
-                min_par_id = meta[mark][0][2]
+                min_par_id = min_par_mark[2]
     return next_mark, min_par_id
 
 
