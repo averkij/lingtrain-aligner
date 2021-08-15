@@ -279,19 +279,19 @@ def init_document_db(db_path):
         db.execute('insert into version(version) values (?)', (con.DB_VERSION,))
 
 
-def fill_db_from_files(db_path, lang_from, lang_to, splitted_from, splitted_to, proxy_from, proxy_to):
+def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted_to_path, proxy_from_path, proxy_to_path):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
         init_document_db(db_path)
     lines = []
-    if os.path.isfile(splitted_from):
-        with open(splitted_from, mode="r", encoding="utf-8") as input_path:
+    if os.path.isfile(splitted_from_path):
+        with open(splitted_from_path, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
         lines, meta, meta_par_ids = handle_marks(lines)
         lines_proxy = []
-        if os.path.isfile(proxy_from):
-            with open(proxy_from, mode="r", encoding="utf-8") as input_path:
+        if os.path.isfile(proxy_from_path):
+            with open(proxy_from_path, mode="r", encoding="utf-8") as input_path:
                 lines_proxy = input_path.readlines()
         if len(lines) == len(lines_proxy):
             data = zip(lines, lines_proxy)
@@ -301,13 +301,13 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from, splitted_to, 
             db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
                            (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
             db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"from"))
-    if os.path.isfile(splitted_to):
-        with open(splitted_to, mode="r", encoding="utf-8") as input_path:
+    if os.path.isfile(splitted_to_path):
+        with open(splitted_to_path, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
         lines, meta, meta_par_ids = handle_marks(lines)
         lines_proxy = []
-        if os.path.isfile(proxy_to):
-            with open(proxy_to, mode="r", encoding="utf-8") as input_path:
+        if os.path.isfile(proxy_to_path):
+            with open(proxy_to_path, mode="r", encoding="utf-8") as input_path:
                 lines_proxy = input_path.readlines()
         if len(lines) == len(lines_proxy):
             data = zip(lines, lines_proxy)

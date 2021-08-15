@@ -117,10 +117,10 @@ def save_pic(align_matrix, lang_name_to, lang_name_from, output_path, batch_numb
     #plot info
     if show_info and shift is not None and window is not None:
         if show_regression:
-            plt.text(0.0, -0.1, f"s={shift}, w={window}, mse={mse:.2f}", fontsize=8, transform=plt.gca().transAxes, c="black")
+            plt.text(0.0, -0.12, f"s={shift}, w={window}, mse={mse:.2f}", fontsize=8, transform=plt.gca().transAxes, c="black")
         else:
-            plt.text(0.0, -0.1, f"s={shift}, w={window}", fontsize=8, transform=plt.gca().transAxes, c="black")
-        plt.text(0.0, -0.18, f"{lang_name_to}  {interval_x[0]} - {interval_x[1]}, {lang_name_from}  {interval_y[0]} - {interval_y[1]}", fontsize=8, transform=plt.gca().transAxes, c="black")
+            plt.text(0.0, -0.12, f"s={shift}, w={window}", fontsize=8, transform=plt.gca().transAxes, c="black")
+        plt.text(0.0, -0.20, f"{lang_name_to}  {interval_x[0]} - {interval_x[1]}, {lang_name_from}  {interval_y[0]} - {interval_y[1]}", fontsize=8, transform=plt.gca().transAxes, c="black")
         
     plt.savefig(output, dpi=my_dpi, transparent=transparent)  
     # plt.savefig(output, bbox_inches="tight", pad_inches=0, dpi=my_dpi)
