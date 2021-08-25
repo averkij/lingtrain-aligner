@@ -26,6 +26,16 @@ def save_plain_text(db_path, output_path, direction):
         doc_out.write(text)
 
 
+def save_paragraphs(paragraphs, lang_code, output_path):
+    """Save aligned paragraphs for a choosen direction"""
+    with open(output_path, "w", encoding="utf8") as res_html:
+        res = []
+        for par in paragraphs[lang_code]:
+            res.append(" ".join(par))
+        text = "\n".join(res)
+        res_html.write(text)
+
+
 def get_culture(lang_code):
     """Get language culture"""
     if lang_code in CULTURE_LIST:
