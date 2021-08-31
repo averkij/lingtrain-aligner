@@ -419,7 +419,7 @@ def sort_meta(metas):
             metas["items"][lang][mark].sort(key=lambda x: x[2])
 
 
-def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, output_path, template, styles=[]):
+def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, output_path, template, styles=[], highlight="through"):
     """Generate html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -470,14 +470,20 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
         res_html.write("</div>")
 
         #--------------------TITLE and AUTHOR
-        res_html.write("<div class='dt-row header'>")
+        res_html.write("<div class='dt-row header title-cell'>")
         for lang in lang_ordered:
-            res_html.write("<div class='par dt-cell'>")
+            res_html.write("<div class='title-cell dt-cell'>")
             meta = metas["items"][lang]
             title = get_meta(meta, preprocessor.TITLE)
-            author = get_meta(meta, preprocessor.AUTHOR)
             if title:
                 res_html.write("<h1 class='lt-title'>" + title + "</h1>")
+            res_html.write("</div>")
+        res_html.write("</div>")
+        res_html.write("<div class='dt-row header'>")
+        for lang in lang_ordered:
+            res_html.write("<div class='author-cell dt-cell'>")
+            meta = metas["items"][lang]
+            author = get_meta(meta, preprocessor.AUTHOR)
             if author:
                 res_html.write("<h1 class='lt-author'>" + author + "</h1>")
             res_html.write("</div>")
@@ -485,24 +491,25 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
 
         next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
+        j = 0
         for actual_paragraphs_id in range(min_par_len):
             real_par_id = delimeters[actual_paragraphs_id]
 
             while next_meta_par_id <= real_par_id:
                 _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
                 next_mark, next_meta_par_id = get_next_meta_par_id(metas)
-
+            
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-
+                
                 res_html.write(f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>")
-
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
+                    sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
                     res_html.write(
-                        f"<span class='s s{k%sent_cycle}'>{sent}</span>")
-
+                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>")
                 res_html.write("</div>")
 
+            j += len(paragraphs[lang][actual_paragraphs_id])
             res_html.write("</div>")
 
         while next_mark:
@@ -514,7 +521,7 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
         res_html.write("</body></html>")
 
 
-def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[]):
+def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[], highlight="through"):
     """Generate multilingual html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -557,14 +564,20 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         res_html.write("</div>")
 
         #--------------------TITLE and AUTHOR
-        res_html.write("<div class='dt-row header'>")
+        res_html.write("<div class='dt-row header title-cell'>")
         for lang in lang_ordered:
-            res_html.write("<div class='par dt-cell'>")
+            res_html.write("<div class='title-cell dt-cell'>")
             meta = metas["items"][lang]
             title = get_meta(meta, preprocessor.TITLE)
-            author = get_meta(meta, preprocessor.AUTHOR)
             if title:
                 res_html.write("<h1 class='lt-title'>" + title + "</h1>")
+            res_html.write("</div>")
+        res_html.write("</div>")
+        res_html.write("<div class='dt-row header'>")
+        for lang in lang_ordered:
+            res_html.write("<div class='author-cell dt-cell'>")
+            meta = metas["items"][lang]
+            author = get_meta(meta, preprocessor.AUTHOR)
             if author:
                 res_html.write("<h1 class='lt-author'>" + author + "</h1>")
             res_html.write("</div>")
@@ -573,7 +586,8 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         # --------------------PARAGRAPHS
         next_mark, next_meta_par_id = get_next_meta_par_id(metas)
         min_par_len = min([len(paragraphs[x]) for x in paragraphs])
-
+        
+        j = 0
         for actual_paragraphs_id in range(min_par_len):
             real_par_id = delimeters[actual_paragraphs_id]
 
@@ -583,15 +597,16 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
 
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-
+                
                 res_html.write(f"<div class='par dt-cell'>  ")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
+                    sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
                     res_html.write(
-                        f"<span class='s s{k%sent_cycle}'>{sent}</span>")
-
+                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>")
                 res_html.write("</div>")
 
+            j += len(paragraphs[lang][actual_paragraphs_id])
             res_html.write("</div>")
 
         while next_mark:
@@ -603,7 +618,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         res_html.write("</body></html>")
 
 
-def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, template, styles=[], par_amount=0):
+def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, template, styles=[], par_amount=0, highlight="through"):
     """Generate multiligual html preview"""
     # ensure path is existed
     langs_count = len(lang_ordered)
@@ -633,14 +648,20 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
     res_html += "</div>"
 
     #--------------------TITLE and AUTHOR
-    res_html += "<div class='dt-row header'>"
+    res_html += "<div class='dt-row header title-cell'>"
     for lang in lang_ordered:
-        res_html += "<div class='par dt-cell'>"
+        res_html += "<div class='title-cell dt-cell'>"
         meta = metas["items"][lang]
         title = get_meta(meta, preprocessor.TITLE)
-        author = get_meta(meta, preprocessor.AUTHOR)
         if title:
             res_html += "<h1 class='lt-title'>" + title + "</h1>"
+        res_html += "</div>"
+    res_html += "</div>"
+    res_html += "<div class='dt-row header'>"
+    for lang in lang_ordered:
+        res_html += "<div class='author-cell dt-cell'>"
+        meta = metas["items"][lang]
+        author = get_meta(meta, preprocessor.AUTHOR)
         if author:
             res_html += "<h1 class='lt-author'>" + author + "</h1>"
         res_html += "</div>"
@@ -652,6 +673,7 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
     if par_amount > 0:
         min_par_len = min(min_par_len, par_amount)
 
+    j = 0
     for actual_paragraphs_id in range(min_par_len):
         real_par_id = delimeters[actual_paragraphs_id]
 
@@ -661,14 +683,14 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
 
         res_html += "<div class='dt-row'>"
         for lang in lang_ordered:
-
             res_html += f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
 
             for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                res_html += f"<span class='s s{k%sent_cycle} {template}'>{sent}</span>"
+                sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
+                res_html += f"<span class='s s{sent_cycle_index} {template}'>{sent}</span>"
 
             res_html += "</div>"
-
+        j += len(paragraphs[lang][actual_paragraphs_id])
         res_html += "</div>"
 
     # --------------------END BOOK
@@ -720,7 +742,7 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
         elif next_mark == preprocessor.QUOTE_NAME:
             el = f"<div class='par dt-cell'><div class='lt-quote lt-quote-name'>{val[0]}</div></div>"
         elif next_mark == preprocessor.IMAGE:
-            el = f"<div class='par dt-cell text-center'><img class='lt-image' src='{val[0]}'/></div>"
+            el = f"<div class='par dt-cell text-center'><div class='img-cont'><div class='lt-image-mask'></div><img class='lt-image' src='{val[0]}'/></div></div>"
         else:
             el = f"<div class='par dt-cell'><{HEADER_HTML_MAPPING[next_mark]}>{val[0]}</{HEADER_HTML_MAPPING[next_mark]}></div>"
 
@@ -795,7 +817,9 @@ HEADER_HTML_MAPPING = {
 }
 
 # DIVIDER_URL = "https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png"
-DIVIDER_URL = "https://habrastorage.org/webt/q9/1t/cy/q91tcypgjnrrsmrfcviyzzdvfsk.png"
+# DIVIDER_URL = "https://habrastorage.org/webt/q9/1t/cy/q91tcypgjnrrsmrfcviyzzdvfsk.png"
+DIVIDER_URL = "https://habrastorage.org/webt/28/2n/1b/282n1b8oxclxp-jacqfc3sytbqm.png"
+
 
 HTML_FOOTER = """
 <div class="lt-footer">🚀 created in lingtrain alignment studio</div>"""
@@ -904,8 +928,8 @@ h3 {
 }
 
 .divider-img {
-    width: 50px;
-    height: 50px;
+    # width: 50px;
+    # height: 50px;
 }
 
 .flag-img {
@@ -938,14 +962,32 @@ h3 {
 .lt-image {
     max-height: 300px;
     max-width: 800px;
+    -webkit-mask-image: url(https://hsto.org/webt/wg/wv/ai/wgwvai84o5fvgpok4mnannr7jca.png);
+    mask-image: url(https://hsto.org/webt/wg/wv/ai/wgwvai84o5fvgpok4mnannr7jca.png);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+    margin: 20px 0;
 }
 .lt-title {
     font-size: 52px;
     text-align: center;
 }
 .lt-author {
+    margin-top: -10px;
     font-size: 40px;
     text-align: center;
+}
+
+.title-cell {
+    padding: 20px 20px 0px 20px;
+}
+
+.author-cell {
+    padding: 0px 0px 30px 0px;
 }
 
 @media print {
