@@ -543,6 +543,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         # --------------------HEAD
         res_html.write(f"""
 <html><head>
+    <meta charset="utf-8">
     <link rel="preconnect" href="https://fonts.gstatic.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400&display=swap" rel="stylesheet">
