@@ -31,7 +31,6 @@ XX_CODE = "xx"
 LANGUAGES = {
     RU_CODE: {"name": "Russian"},
     ZH_CODE: {"name": "Chinese"},
-    
     DE_CODE: {"name": "German"},
     EN_CODE: {"name": "English"},
     FR_CODE: {"name": "French"},

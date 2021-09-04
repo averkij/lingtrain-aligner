@@ -26,7 +26,7 @@ def is_empty_cells(db_path):
     return False
     
 
-def get_paragraphs(db_path, direction="from"):
+def get_paragraphs(db_path, direction="from", par_amount=0):
     """Read all paragraphs with marks from database"""
     # default direction is 'from'
     if direction != "to":
@@ -64,8 +64,13 @@ def get_paragraphs(db_path, direction="from"):
 
     gen_main = get_next_paragraph(
         index, data, paragraphs_from_dict, paragraphs_to_dict, direction)
-    par_info = [(par_from, par_to, par_id)
-                for par_from, par_to, par_id, _, _ in gen_main]
+
+    par_info, count = [], 0
+    for par_from, par_to, par_id, _, _ in gen_main:
+        par_info.append((par_from, par_to, par_id))
+        count += 1
+        if par_amount != 0 and count == par_amount:
+            break
     par_info_list = list(zip(*par_info))
 
     paragraphs_from, paragraphs_to, par_ids = par_info_list[0], par_info_list[1], par_info_list[2]
