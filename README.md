@@ -1,3 +1,5 @@
+[![PyPI - PyPi](https://img.shields.io/pypi/v/lingtrain-aligner)](https://pypi.org/project/lingtrain-aligner)
+
 # Lingtrain Aligner
 
 ML powered library for the accurate texts alignment in different languages.
