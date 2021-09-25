@@ -15,9 +15,12 @@ from scipy import spatial
 to_delete = re.compile(
     r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
 
-def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False):
+def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, model=None):
     """Calculate embedding of the string"""
-    return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
+    if model:
+        return model.encode(lines, batch_size=embed_batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
+    else:
+        return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
 
 
 def clean_lines(lines):
@@ -25,7 +28,7 @@ def clean_lines(lines):
     return [re.sub(to_delete, '', line) for line in lines]
 
 
-def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path="", show_info=False, show_regression=False):
+def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path="", show_info=False, show_regression=False, model=None):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
@@ -33,8 +36,8 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
-    vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
-    vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
+    vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+    vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}.")
@@ -92,7 +95,7 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
     return result
 
 
-def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False):
+def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, model=None):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
@@ -105,7 +108,7 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         print("batch:", count)
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression)
+                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression, model=model)
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 

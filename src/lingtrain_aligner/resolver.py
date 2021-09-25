@@ -137,7 +137,7 @@ def get_conflict_coordinates(conflict):
     return (conflict["from"]["start"][1], conflict["from"]["start"][2]), (conflict["from"]["end"][1], conflict["from"]["end"][2])
 
 
-def squash_conflict(db_path, conflict, model_name, show_logs=False):
+def squash_conflict(db_path, conflict, model_name, show_logs=False, model=None):
     """Find the best solution"""
     splitted_from = helper.get_splitted_from_by_id_range(
         db_path, conflict["from"]["start"][0], conflict["from"]["end"][0])
@@ -147,7 +147,7 @@ def squash_conflict(db_path, conflict, model_name, show_logs=False):
     variants_ids = get_variants(conflict, show_logs)
     unique_variants = helper.get_unique_variants(variants_ids)
     vecs_from, vecs_to = get_vectors(
-        unique_variants, splitted_from, splitted_to, model_name)
+        unique_variants, splitted_from, splitted_to, model_name, model)
     unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
 
     # for key in unique_sims:
@@ -249,35 +249,33 @@ def get_all_conflicts(db_path, min_chain_length=3, max_conflicts_len=6, batch_id
     return conflicts_to_solve, conflicts_rest
 
 
-def resolve_all_conflicts(db_path, conflicts, model_name, show_logs=False):
+def resolve_all_conflicts(db_path, conflicts, model_name, show_logs=False, model=None):
     """Apply all the solutions to the database"""
-    for i, conflict in enumerate(tqdm(conflicts[::-1])):
-        total_len = len(conflicts)
-        # print(f"resolving: {i+1}/{total_len}")
+    for _, conflict in enumerate(tqdm(conflicts[::-1])):
         solution, lines_from, lines_to = squash_conflict(
-            db_path, conflict, model_name, show_logs)
+            db_path, conflict, model_name, show_logs, model)
         resolve_conflict(db_path, conflict, solution,
                          lines_from, lines_to, show_logs)
 
 
-def fix_start(db_path, model_name, max_conflicts_len=6, show_logs=False):
+def fix_start(db_path, model_name, max_conflicts_len=6, show_logs=False, model=None):
     """Find the first conflict and resolve"""
     prepared_index = prepare_index(db_path, 0)
     chains_from, chains_to = get_good_chains(
         prepared_index, min_len=2, handle_start=True)
     conflicts_to_solve, _ = get_conflicts(
         chains_from, chains_to, max_len=max_conflicts_len)
-    resolve_all_conflicts(db_path, conflicts_to_solve, model_name, show_logs)
+    resolve_all_conflicts(db_path, conflicts_to_solve, model_name, show_logs, model)
 
 
-def get_vectors(unique_variants, splitted_from, splitted_to, model_name):
+def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=None):
     strings_from = []
     strings_to = []
     for x in unique_variants:
         strings_from.append(helper.get_string(splitted_from, x[0]))
         strings_to.append(helper.get_string(splitted_to, x[1]))
 
-    return aligner.get_line_vectors(strings_from, model_name), aligner.get_line_vectors(strings_to, model_name)
+    return aligner.get_line_vectors(strings_from, model_name, model=model), aligner.get_line_vectors(strings_to, model_name, model=model)
 
 
 def get_unique_sims(unique_variants, vecs_from, vecs_to):

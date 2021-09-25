@@ -16,14 +16,16 @@ def get_doc_index_original(db_path):
     return res
 
 
-def get_flatten_doc_index(db_path):
+def get_flatten_doc_index(db_path, batch_ids=[]):
     """Get document index"""
     res = []
     try:
         with sqlite3.connect(db_path) as db:
             cur = db.execute('SELECT contents FROM doc_index')
             data = json.loads(cur.fetchone()[0])
-        for _, sub_index in enumerate(data):
+        for batch_id, sub_index in enumerate(data):
+            if batch_ids and batch_id not in batch_ids:
+                continue
             res.extend(list(zip(sub_index, range(len(sub_index)))))
     except:
         logging.warning("can not fetch flatten index")
@@ -259,9 +261,9 @@ def get_doc_items(index_items, db_path):
     return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
 
 
-def read_processing(db_path):
+def read_processing(db_path, batch_ids=[]):
     """Read the processsing document"""
-    ordered_text_ids = [x[0][0] for x in get_flatten_doc_index(db_path)]
+    ordered_text_ids = [x[0][0] for x in get_flatten_doc_index(db_path, batch_ids)]
     with sqlite3.connect(db_path) as db:
         db.execute('DROP TABLE If EXISTS temp.dl_ids')
         db.execute(
