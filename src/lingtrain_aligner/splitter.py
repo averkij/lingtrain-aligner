@@ -25,6 +25,7 @@ KO_CODE = "ko"
 NL_CODE = "nl"
 SW_CODE = "sw"
 UK_CODE = "uk"
+CV_CODE = "cv"
 
 XX_CODE = "xx"
 
@@ -47,6 +48,7 @@ LANGUAGES = {
     SW_CODE: {"name": "Sweden"},
     NL_CODE: {"name": "Dutch"},
     UK_CODE: {"name": "Ukrainian"},
+    CV_CODE: {"name": "Chuvash"},
 
     XX_CODE: {"name": "Unknown"}
 }
