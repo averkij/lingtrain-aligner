@@ -130,25 +130,27 @@ def get_splitted_to_by_id(db_path, ids):
 def get_splitted_from_by_id_range(db_path, start_id, end_id):
     """Get lines from splitted_from by ids"""
     ids = [x for x in range(start_id, end_id + 1)]
-    res = dict()
+    splitted, proxy = dict(), dict()
     with sqlite3.connect(db_path) as db:
         for id, text_from, proxy_from in db.execute(
             f'select f.id, f.text, f.proxy_text from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
         ):
-            res[id] = text_from
-    return res
+            splitted[id] = text_from
+            proxy[id] = proxy_from
+    return splitted, proxy
 
 
 def get_splitted_to_by_id_range(db_path, start_id, end_id):
     """Get lines from splitted_to by ids"""
     ids = [x for x in range(start_id, end_id + 1)]
-    res = dict()
+    splitted, proxy = dict(), dict()
     with sqlite3.connect(db_path) as db:
         for id, text_to, proxy_to in db.execute(
             f'select t.id, t.text, t.proxy_text from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
-            res[id] = text_to
-    return res
+            splitted[id] = text_to
+            proxy[id] = proxy_to
+    return splitted, proxy
 
 
 def get_splitted_from(db_path, ids=[]):
