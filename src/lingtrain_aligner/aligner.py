@@ -28,7 +28,27 @@ def clean_lines(lines):
     return [re.sub(to_delete, '', line) for line in lines]
 
 
-def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_number, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic=False, lang_name_from="", lang_name_to="", img_path="", show_info=False, show_regression=False, model=None):
+def process_batch(lines_from_batch,
+                    lines_to_batch,
+                    proxy_from_batch,
+                    proxy_to_batch,
+                    line_ids_from,
+                    line_ids_to,
+                    batch_number,
+                    model_name,
+                    window,
+                    embed_batch_size,
+                    normalize_embeddings,
+                    show_progress_bar,
+                    save_pic=False,
+                    lang_name_from="",
+                    lang_name_to="",
+                    img_path="",
+                    show_info=False,
+                    show_regression=False,
+                    model=None,
+                    use_proxy_from=False,
+                    use_proxy_to=False):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
@@ -36,8 +56,15 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
-    vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
-    vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+    if use_proxy_from:
+        vectors1 = [*get_line_vectors(proxy_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+    else:
+        vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+
+    if use_proxy_to:
+        vectors2 = [*get_line_vectors(proxy_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+    else:
+        vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}.")
@@ -77,15 +104,21 @@ def process_batch(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, 
     #     return [], []
 
 
-def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False):
+def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, proxy_from=[], proxy_to=[]):
     result = []
-    task_list = [(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id)
-                 for lines_from_batch, lines_to_batch,
-                 line_ids_from, line_ids_to, batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift)]
+    task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
+                 for
+                    lines_from_batch,
+                    lines_to_batch,
+                    proxy_from_batch,
+                    proxy_to_batch,
+                    line_ids_from,
+                    line_ids_to,
+                    batch_id
+                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
 
-    for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
-        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
+    for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
+        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from,
                                              line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression)
         result.append((batch_id, texts_from, texts_to))
 
@@ -95,20 +128,26 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
     return result
 
 
-def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, model=None):
+def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, model=None, proxy_from=[], proxy_to=[]):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
-    task_list = [(lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id)
-                 for lines_from_batch, lines_to_batch,
-                 line_ids_from, line_ids_to, batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift)]
+    task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
+                 for
+                    lines_from_batch,
+                    lines_to_batch,
+                    proxy_from_batch,
+                    proxy_to_batch,
+                    line_ids_from,
+                    line_ids_to,
+                    batch_id
+                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
 
     count = 0
     for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         print("batch:", count)
         texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression, model=model)
+                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression, model=model, proxy_from=[], proxy_to=[])
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 
@@ -139,6 +178,22 @@ def get_splitted_to(db_path):
     return [x[0] for x in res]
 
 
+def get_proxy_from(db_path):
+    """Get lines from proxy_from"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f'select f.proxy_text from splitted_from f order by f.id').fetchall()
+    return [x[0] for x in res]
+
+
+def get_proxy_to(db_path):
+    """Get lines from proxy_to"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f'select t.proxy_text from splitted_to t order by t.id').fetchall()
+    return [x[0] for x in res]
+
+
 def best_per_row_with_ones(sim_matrix):
     """Transfor matrix by leaving only best match"""
     sim_matrix_best = np.zeros_like(sim_matrix)
@@ -147,12 +202,17 @@ def best_per_row_with_ones(sim_matrix):
     return sim_matrix_best
 
 
-def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0):
+def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]):
     """Get batch with an additional window"""
     l1 = len(iter1)
     l2 = len(iter2)
     k = int(round(n * l2/l1))
     kdx = 0 - k
+
+    if not iter3:
+        iter3 = ['' for _ in range(l1)]
+    if not iter4:
+        iter4 = ['' for _ in range(l2)]
 
     if k < window*2:
         # subbatches will be intersected
@@ -165,6 +225,8 @@ def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0):
         if counter in batch_ids or len(batch_ids) == 0:
             yield iter1[ndx:min(ndx + n, l1)], \
                 iter2[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
+                iter3[ndx:min(ndx + n, l1)], \
+                iter4[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
                 list(range(ndx, min(ndx + n, l1))), \
                 list(range(max(0, kdx - window + batch_shift), min(kdx + k + window + batch_shift, l2))), \
                 counter
