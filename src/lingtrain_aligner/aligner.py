@@ -144,9 +144,9 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
                  in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
 
     count = 0
-    for lines_from_batch, lines_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
+    for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         print("batch:", count)
-        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, line_ids_from,
+        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from,
                                              line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression, model=model, proxy_from=[], proxy_to=[])
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
