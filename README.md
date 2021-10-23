@@ -4,7 +4,7 @@
 
 ML powered library for the accurate texts alignment in different languages.
 
-![Cover](/img/cover.png)
+![Cover](https://i.imgur.com/WQWB4v0.png)
 
 ## Purpose
 
