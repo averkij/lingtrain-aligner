@@ -84,9 +84,9 @@ def save_json(db_path, output_path, lang_from, lang_to):
         doc_out.write(text)
 
 
-def save_xml(db_path, output_path, lang_from, lang_to):
+def save_xml(db_path, output_path, lang_from, lang_to, direction = "to"):
     """Save text document in XML format"""
-    text = export_xml(db_path, [lang_from, lang_to])
+    text = export_xml(db_path, [lang_from, lang_to], direction)
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         doc_out.write(text)
 
@@ -183,20 +183,22 @@ def export_xml(db_path, lang_ordered, direction="to"):
 
     #head
     root["head"] = {
-            "creator": "Lingtrain Alignment Studio",
+            "creationtool": "Lingtrain Alignment Studio",
+            "creationid": "LINGTRAIN",
+            "creationdate": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
             "paragraphs": par_len,
-            "langs": [],
-            "author": [],
-            "title": []
+            "langs": { "lang": [] },
+            "author": { "s": [] },
+            "title": { "s": [] }
         }
     
     for lang in lang_ordered:
-        root["head"]["langs"].append({"lang": { "@id": lang, "sentences": sent_counter[lang] }})
+        root["head"]["langs"]["lang"].append({ "@id": lang, "sentences": sent_counter[lang] })
         meta = metas["items"][lang]
         title = reader.get_meta(meta, preprocessor.TITLE)
         author = reader.get_meta(meta, preprocessor.AUTHOR)
-        root["head"]["author"].append({"s": { "@lang": lang, "#text": author }})
-        root["head"]["title"].append({"s": { "@lang": lang, "#text": title }})
+        root["head"]["author"]["s"].append({ "@lang": lang, "#text": author })
+        root["head"]["title"]["s"].append({ "@lang": lang, "#text": title })
 
     #body
     root["body"] = { "p": [] }
