@@ -499,7 +499,7 @@ def load_proxy(db_path, filepath, direction):
         with open(filepath, mode="r", encoding="utf-8") as input_path:
             lines_proxy = input_path.readlines()
     ids = [x for x in range(1, len(lines_proxy)+1)]
-    with sqlite3.connect(db_path) as db:        
+    with sqlite3.connect(db_path) as db:
         if direction == "from":
             db.executemany("update splitted_from set proxy_text=(?) where id=(?)", [
                             (proxy, id) for id, proxy in zip(ids, lines_proxy)])
