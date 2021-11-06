@@ -104,7 +104,26 @@ def process_batch(lines_from_batch,
     #     return [], []
 
 
-def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, proxy_from=[], proxy_to=[]):
+def align_texts(splitted_from,
+        splitted_to,
+        model_name,
+        batch_size,
+        window,
+        batch_ids=[],
+        save_pic=False,
+        lang_from="",
+        lang_to="",
+        img_path="",
+        embed_batch_size=10,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+        shift=0,
+        show_info=False,
+        show_regression=False,
+        proxy_from=[],
+        proxy_to=[],
+        use_proxy_from=False,
+        use_proxy_to=False):
     result = []
     task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
                  for
@@ -118,8 +137,27 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
                  in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
 
     for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
-        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression)
+        texts_from, texts_to = process_batch(
+            lines_from_batch,
+            lines_to_batch,
+            proxy_from_batch,
+            proxy_to_batch,
+            line_ids_from,
+            line_ids_to,
+            batch_id,
+            model_name,
+            window,
+            embed_batch_size,
+            normalize_embeddings,
+            show_progress_bar,
+            save_pic,
+            lang_from,
+            lang_to,
+            img_path,
+            show_info=show_info,
+            show_regression=show_regression,
+            use_proxy_from=use_proxy_from,
+            use_proxy_to=use_proxy_to)
         result.append((batch_id, texts_from, texts_to))
 
     # sort by batch_id (will be useful with parallel processing)
@@ -128,10 +166,30 @@ def align_texts(splitted_from, splitted_to, model_name, batch_size, window, batc
     return result
 
 
-def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=False, lang_from="", lang_to="", img_path="", embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, shift=0, show_info=False, show_regression=False, model=None, proxy_from=[], proxy_to=[]):
+def align_db(db_path,
+        model_name,
+        batch_size,
+        window,
+        batch_ids=[],
+        save_pic=False,
+        lang_from="",
+        lang_to="",
+        img_path="",
+        embed_batch_size=10,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+        shift=0,
+        show_info=False,
+        show_regression=False,
+        model=None,
+        use_proxy_from=False,
+        use_proxy_to=False):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
+    proxy_from = get_proxy_from(db_path)
+    proxy_to = get_proxy_to(db_path)
+
     task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
                  for
                     lines_from_batch,
@@ -146,8 +204,28 @@ def align_db(db_path, model_name, batch_size, window, batch_ids=[], save_pic=Fal
     count = 0
     for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
         print("batch:", count)
-        texts_from, texts_to = process_batch(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from,
-                                             line_ids_to, batch_id, model_name, window, embed_batch_size, normalize_embeddings, show_progress_bar, save_pic, lang_from, lang_to, img_path, show_info=show_info, show_regression=show_regression, model=model, proxy_from=[], proxy_to=[])
+        texts_from, texts_to = process_batch(
+            lines_from_batch,
+            lines_to_batch,
+            proxy_from_batch,
+            proxy_to_batch,
+            line_ids_from,
+            line_ids_to,
+            batch_id,
+            model_name,
+            window,
+            embed_batch_size,
+            normalize_embeddings,
+            show_progress_bar,
+            save_pic,
+            lang_from,
+            lang_to,
+            img_path,
+            show_info=show_info,
+            show_regression=show_regression,
+            model=model,
+            use_proxy_from=use_proxy_from,
+            use_proxy_to=use_proxy_to)
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 
