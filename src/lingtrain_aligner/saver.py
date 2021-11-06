@@ -77,11 +77,12 @@ def get_culture(lang_code):
     return CULTURE_LIST[DEFAULT_CULTURE]
 
 
-def save_json(db_path, output_path, lang_from, lang_to):
+def save_json(db_path, output_path, lang_from, lang_to, direction = "to"):
     """Save text document in JSON format"""
-    text = export_json(db_path, [lang_from, lang_to])
+    text = export_json(db_path, [lang_from, lang_to], direction)
+    print("JSON", type(text))
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
-        doc_out.write(text)
+        json.dump(text, doc_out, ensure_ascii=False, indent=3)
 
 
 def save_xml(db_path, output_path, lang_from, lang_to, direction = "to"):
