@@ -72,6 +72,11 @@ last_punct = re.compile(r'[,\.]+$')
 multiple_spaces = re.compile(r'\s+')
 pattern_ru = re.compile(r'[a-zA-Z\.\(\)\[\]\/\-\:!?\<\>;•\"\'«»——,]+')
 pattern_ru_letters_only = re.compile(r'[^а-яА-Я\s]+')
+german_foo = '%@%'
+german_months = 'Januar|Jänner|Janner|Februar|März|Marz|April|Mai|Juni|Juli|August|September|Oktober|October|November|Dezember'
+german_dates = re.compile(rf'(\s)(\d{{1,2}})\.(\s+)({german_months})')
+german_bdates  = re.compile(rf'(\s)(\d{{1,2}}){german_foo}(\s+)({german_months})')
+
 
 DEFAULT_PREPROCESSING = [
     (double_spaces, ' '),
@@ -118,7 +123,7 @@ def preprocess_raw(lines, re_list):
     """Preprocess raw file lines"""
     for i,line in enumerate(lines):
         for pat, val in re_list:
-            lines[i] = re.sub(pat, val, lines[i])
+            lines[i] = re.sub(pat, val, line)
     return lines
 
 
@@ -173,12 +178,6 @@ def split_by_sentences_wrapper(lines, langcode):
     return res
 
 
-german_foo = '%@%'
-german_months = 'Januar|Jänner|Janner|Februar|März|Marz|April|Mai|Juni|Juli|August|September|Oktober|October|November|Dezember'
-german_dates = re.compile(rf'(\s)(\d{{1,2}})\.(\s+)({german_months})')
-german_bdates  = re.compile(rf'(\s)(\d{{1,2}}){german_foo}(\s+)({german_months})')
-
-
 def split_by_sentences(lines, langcode):
     """Split line by sentences using language specific rules"""
     line = ' '.join(lines)
@@ -196,9 +195,9 @@ def split_by_sentences(lines, langcode):
             *DEFAULT_PREPROCESSING
         ],
             split_by_razdel)
-        sentences = preprocess_raw( sentences, [
-            ( german_bdates, r'\1\2.\3\4' )
-        ] )
+        sentences = preprocess_raw(sentences, [
+            (german_bdates, r'\1\2.\3\4')
+        ])
         return sentences
     if langcode == ZH_CODE:
         sentences = preprocess(line, [
