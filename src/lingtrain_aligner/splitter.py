@@ -121,9 +121,9 @@ def after_fr(lines):
 
 def preprocess_raw(lines, re_list):
     """Preprocess raw file lines"""
-    for i,line in enumerate(lines):
+    for i in range(len(lines)):
         for pat, val in re_list:
-            lines[i] = re.sub(pat, val, line)
+            lines[i] = re.sub(pat, val, lines[i])
     return lines
 
 
