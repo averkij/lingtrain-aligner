@@ -296,8 +296,8 @@ def get_meta_dict(db_path):
     """Get all the meta information as dict"""
     res = defaultdict(list)
     with sqlite3.connect(db_path) as db:
-        for key, val, occurence, par_id, id in db.execute(f'select m.key, m.val, m.occurence, m.par_id, m.id from meta m where m.deleted = 0'):
-            res[key].append((val, occurence, par_id, id))
+        for key, val, occurence, par_id, line_id in db.execute(f'select m.key, m.val, m.occurence, m.par_id, m.line_id from meta m where m.deleted = 0'):
+            res[key].append((val, occurence, par_id, line_id))
     return res
 
 
@@ -381,6 +381,16 @@ def get_lang_codes(db_path):
         lang_to = db.execute(
             f'select l.val from languages l where l.key="to"').fetchone()
     return lang_from[0], lang_to[0]
+
+
+def get_splitted_lenght(db_path):
+    """Get splitted texts lenght"""
+    with sqlite3.connect(db_path) as db:
+        count_from = db.execute(
+            f'select count(*) from splitted_from').fetchone()
+        count_to = db.execute(
+            f'select count(*) from splitted_to').fetchone()
+    return count_from[0], count_to[0]
 
 
 def get_processing_from(db_path):
