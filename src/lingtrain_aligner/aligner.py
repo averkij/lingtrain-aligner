@@ -9,7 +9,7 @@ import sqlite3
 from collections import defaultdict
 
 import numpy as np
-from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor, constants as con
+from lingtrain_aligner import model_dispatcher, helper, vis_helper, preprocessor, constants as con
 from scipy import spatial
 
 to_delete = re.compile(
@@ -280,11 +280,11 @@ def best_per_row_with_ones(sim_matrix):
     return sim_matrix_best
 
 
-def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]):
+def get_batch_intersected(iter1, iter2, batch_size, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]):
     """Get batch with an additional window"""
     l1 = len(iter1)
     l2 = len(iter2)
-    k = int(round(n * l2/l1))
+    k = int(round(batch_size * l2/l1))
     kdx = 0 - k
 
     if not iter3:
@@ -298,14 +298,14 @@ def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0, 
             f"Batch for the second language is too small. k = {k}, window = {window}")
 
     counter = 0
-    for ndx in range(0, l1, n):
+    for ndx in range(0, l1, batch_size):
         kdx += k
         if counter in batch_ids or len(batch_ids) == 0:
-            yield iter1[ndx:min(ndx + n, l1)], \
+            yield iter1[ndx:min(ndx + batch_size, l1)], \
                 iter2[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
-                iter3[ndx:min(ndx + n, l1)], \
+                iter3[ndx:min(ndx + batch_size, l1)], \
                 iter4[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
-                list(range(ndx, min(ndx + n, l1))), \
+                list(range(ndx, min(ndx + batch_size, l1))), \
                 list(range(max(0, kdx - window + batch_shift), min(kdx + k + window + batch_shift, l2))), \
                 counter
         counter += 1
@@ -532,7 +532,6 @@ def update_proxy_text_from(db_path, proxy_texts, ids=[]):
 def update_proxy_text_to(db_path, proxy_texts, ids=[]):
     """Update proxy text to"""
     update_proxy_text(db_path, proxy_texts, ids, direction="to")
-
 
 
 def handle_marks(lines):
