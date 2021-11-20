@@ -424,7 +424,7 @@ def init_document_db(db_path):
         db.execute('insert into version(version) values (?)', (con.DB_VERSION,))
 
 
-def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted_to_path, proxy_from_path, proxy_to_path):
+def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted_to_path, proxy_from_path, proxy_to_path, batch_size=200):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
@@ -433,7 +433,7 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted
     if os.path.isfile(splitted_from_path):
         with open(splitted_from_path, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, meta, meta_par_ids = handle_marks(lines)
+        lines, meta, meta_par_ids, meta_line_ids = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_from_path):
             with open(proxy_from_path, mode="r", encoding="utf-8") as input_path:
@@ -443,13 +443,13 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted
         else:
             data = zip(lines, ['' for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"from"))
+            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph) values (?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0]) for text, proxy in data])
+            db.executemany("insert into meta(key, val, occurence, par_id, line_id) values(?,?,?,?,?)", flatten_meta(meta, meta_par_ids, meta_line_ids,"from"))
     if os.path.isfile(splitted_to_path):
         with open(splitted_to_path, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
-        lines, meta, meta_par_ids = handle_marks(lines)
+        lines, meta, meta_par_ids, meta_line_ids = handle_marks(lines)
         lines_proxy = []
         if os.path.isfile(proxy_to_path):
             with open(proxy_to_path, mode="r", encoding="utf-8") as input_path:
@@ -459,40 +459,117 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted
         else:
             data = zip(lines, ['' for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"to"))
+            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph) values (?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0]) for text, proxy in data])
+            db.executemany("insert into meta(key, val, occurence, par_id, line_id) values(?,?,?,?,?)", flatten_meta(meta, meta_par_ids, meta_line_ids,"to"))
     with sqlite3.connect(db_path) as db:
         db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
 
 
-def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
+def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[], batch_size=200, window=20, segmentation_marks=[preprocessor.SEGMENT]):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
         init_document_db(db_path)
     if len(splitted_from) > 0:
-        splitted_from, meta, meta_par_ids = handle_marks(splitted_from)
+        splitted_from, meta, meta_par_ids, meta_line_ids = handle_marks(splitted_from)
         if len(splitted_from) == len(proxy_from):
             data = zip(splitted_from, proxy_from)
         else:
             data = zip(splitted_from, ['' for _ in range(len(splitted_from))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "from"))
+            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph) values (?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0]) for text, proxy in data])
+            db.executemany("insert into meta(key, val, occurence, par_id, line_id) values(?,?,?,?,?)", flatten_meta(meta, meta_par_ids, meta_line_ids, "from"))
     if len(splitted_to) > 0:
-        splitted_to, meta, meta_par_ids = handle_marks(splitted_to)
+        splitted_to, meta, meta_par_ids, meta_line_ids = handle_marks(splitted_to)
         if len(splitted_to) == len(proxy_to):
             data = zip(splitted_to, proxy_to)
         else:
             data = zip(splitted_to, ['' for _ in range(len(splitted_to))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "to"))
+            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph) values (?,?,?,?)", [
+                           (text[0].strip(), proxy.strip(), 0, text[1][0]) for text, proxy in data])
+            db.executemany("insert into meta(key, val, occurence, par_id, line_id) values(?,?,?,?,?)", flatten_meta(meta, meta_par_ids, meta_line_ids, "to"))
     with sqlite3.connect(db_path) as db:
         db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
+    init_segments(db_path, segmentation_marks)
+
+    #TODO
+    left_segments, right_segments = calculate_segments(db_path, segmentation_marks)
+    init_batches(db_path, left_segments, right_segments, batch_size=batch_size, window=window, shift=0)
+
+
+def init_segments(db_path, segmentation_marks=[preprocessor.SEGMENT]):
+    """Initialize segments to align"""
+    left_segments, right_segments = calculate_segments(db_path, segmentation_marks)
+    with sqlite3.connect(db_path) as db:
+        db.executemany("insert into segments(left_from, left_to, right_from, right_to, insert_ts, comment) values (?,?,?,?,datetime('now'),'init')", [
+                        (left[0], left[1], right[0], right[1]) for left, right in zip(left_segments, right_segments)])
+
+def init_batches(db_path, left_segments, right_segments, batch_size=200, window=20, shift=0):
+    """Initialize batches table"""
+
+    left_batches, right_batches = calculate_batches(db_path, left_segments, right_segments, batch_size=batch_size, window=window, shift=shift)
+    with sqlite3.connect(db_path) as db:
+        db.executemany("insert into batches(batch_id, left_from, left_to, right_from, right_to, insert_ts, shift, window) values (?,?,?,?,?,datetime('now'),?,?)", [
+                        (i, left[0], left[1], right[0], right[1], shift, window) for i, (left, right) in enumerate(zip(left_batches, right_batches))])
+
+
+def calculate_segments(db_path, segmentation_marks=[preprocessor.SEGMENT]):
+    """Calculate segments based on metadata"""
+    left_nails, right_nails = [], []
+    meta = helper.get_meta_dict(db_path)
+    for mark in meta:
+        if mark.split('_')[0] in segmentation_marks:
+            for segment_mark in meta[mark]:
+                if mark.split('_')[-1] == "from":
+                    left_nails.append(segment_mark[3]) #line_id
+                else:
+                    right_nails.append(segment_mark[3]) #line_id
+
+    #remove duplicates
+    left_nails = list(set(left_nails))
+    right_nails = list(set(right_nails))
+
+    if len(left_nails) == len(right_nails):
+        print("ok")
+    else:
+        raise("error")
+
+    left_nails.sort()
+    right_nails.sort()
+
+    left_segments, right_segments = [], []
+    left_len, right_len = helper.get_splitted_lenght(db_path)
+
+    for i in range(1, len(left_nails)):
+        left_segments.append((left_nails[i-1], left_nails[i]-1))
+        right_segments.append((right_nails[i-1], right_nails[i]-1))
+    
+    #insert last or the only segment
+    if len(left_nails) == 0:
+        left_segments.append((0, left_len))
+        right_segments.append((0, right_len))
+    else:
+        left_segments.append((left_nails[-1], left_len))
+        right_segments.append((right_nails[-1], right_len))
+
+    return left_segments, right_segments
+
+
+def calculate_batches(db_path, left_segments, right_segments, batch_size=200, window=20, shift=0):
+    """Calculate batches based on segments"""
+
+    #TODO get segments from database
+
+    left_batches, right_batches = [], []
+    for left, right in zip(left_segments, right_segments):
+        for left_batch, right_batch, _,_,_,_,_ in get_batch_intersected(range(left[0],left[1]+1), range(right[0], right[1]+1), batch_size=batch_size, window=window, batch_shift=shift):
+            left_batches.append((left_batch[0], left_batch[-1]))
+            right_batches.append((right_batch[0], right_batch[-1]))
+
+    return left_batches, right_batches
 
 
 def load_proxy(db_path, filepath, direction):
