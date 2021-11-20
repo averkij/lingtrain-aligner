@@ -535,13 +535,15 @@ def update_proxy_text_to(db_path, proxy_texts, ids=[]):
 
 
 def handle_marks(lines):
-    """Handle markup. Write counters."""
+    """Handle markup"""
     res = []
     marks_counter = defaultdict(int)
     meta = defaultdict(list)
     meta_par_ids = defaultdict(list)
-    marks = (0,0,0,0,0,0)
+    meta_line_ids = defaultdict(list)
+    marks = (0,)
     p_ending = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
+    line_id = 1
 
     for line in lines:
         next_par = False
@@ -551,62 +553,61 @@ def handle_marks(lines):
             #remove last occurence of PARAGRAPH_MARK
             line = ''.join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
             next_par = True
-        
-        for mark in preprocessor.MARK_COUNTERS:
-            update_mark_counter(marks_counter, line, mark)
 
-        update_meta(meta, line, meta_par_ids, marks_counter[preprocessor.PARAGRAPH])
-                
+        update_meta(meta, line, meta_par_ids, marks_counter[preprocessor.PARAGRAPH], meta_line_ids, line_id)
+
         if not line.endswith(get_all_extraction_endings()):
-            marks = (
-                marks_counter[preprocessor.PARAGRAPH],
-                marks_counter[preprocessor.H1],
-                marks_counter[preprocessor.H2],
-                marks_counter[preprocessor.H3],
-                marks_counter[preprocessor.H4],
-                marks_counter[preprocessor.H5],
-                marks_counter[preprocessor.DIVIDER])
+            marks = (marks_counter[preprocessor.PARAGRAPH],)
             res.append((line, marks))
-            
+            line_id += 1
+
             if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
         else:
             marks_counter[preprocessor.PARAGRAPH] += 1
 
-    return res, meta, meta_par_ids
+    return res, meta, meta_par_ids, meta_line_ids
 
 
-def update_mark_counter(marks_counter, line, mark):
-    ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
-    if line.endswith(ending):
-        marks_counter[mark] += 1
+# def update_mark_counter(marks_counter, line, mark):
+#     """Update mark counter"""
+#     ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
+#     if line.endswith(ending):
+#         marks_counter[mark] += 1
 
 
 def get_mark_value(line, mark):
+    """Get mark value"""
     res = ''
     ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
-    if line.endswith(ending):        
+    if line.endswith(ending):
         if mark == preprocessor.DIVIDER:
             return '* * *'
+        if mark == preprocessor.SEGMENT:
+            return '>>>'
         res = line[:len(line)-len(ending)]
     return res
 
 
 def get_all_extraction_endings():
+    """Get al extraction endings"""
     return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META])
 
-    
-def update_meta(meta, line, meta_par_ids, par_id):
+
+def update_meta(meta, line, meta_par_ids, par_id, meta_line_ids, line_id):
+    """Update meta information"""
     for mark in preprocessor.MARK_META:
         val = get_mark_value(line, mark)
         if val:
             meta[mark].append(val)
             meta_par_ids[mark].append(par_id)
+            meta_line_ids[mark].append(line_id)
 
 
-def flatten_meta(meta, meta_par_ids, direction):
+def flatten_meta(meta, meta_par_ids, meta_line_ids, direction):
+    """Flatten meta information"""
     res = []
     for key in meta:
-        for i, (val, par_id) in enumerate(zip(meta[key], meta_par_ids[key])):
-            res.append((f"{key}_{direction}", val, i, par_id))
+        for i, (val, par_id, line_id) in enumerate(zip(meta[key], meta_par_ids[key], meta_line_ids[key])):
+            res.append((f"{key}_{direction}", val, i, par_id, line_id))
     return res
 
