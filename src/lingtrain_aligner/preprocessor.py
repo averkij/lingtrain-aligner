@@ -18,10 +18,11 @@ TRANSLATOR = "translator"
 QUOTE_TEXT = "qtext"
 QUOTE_NAME = "qname"
 IMAGE = "image"
+SEGMENT = "segment"
 
-MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR, QUOTE_TEXT, QUOTE_NAME, IMAGE, TRANSLATOR]
+#lines with these marks won't be considered during alignment as the text data
+MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR, QUOTE_TEXT, QUOTE_NAME, IMAGE, TRANSLATOR, SEGMENT]
 
-MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 MARKS_FOR_ADDING = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 
 PARAGRAPH_MARK = "%%%%%"
@@ -156,7 +157,7 @@ def mark_paragraphs(lines):
 def parse_marked_line(line):
     """Parse marked line for UI view"""
     res = defaultdict(bool)
-    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
     if line.endswith(p_ending):
         #remove last occurence of PARAGRAPH_MARK
         line = ''.join(line.rsplit(PARAGRAPH_MARK, 1))

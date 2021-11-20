@@ -123,7 +123,7 @@ def preprocess_raw(lines, re_list):
     """Preprocess raw file lines"""
     for i,line in enumerate(lines):
         for pat, val in re_list:
-            lines[i] = re.sub(pat, val, line[i])
+            lines[i] = re.sub(pat, val, line)
     return lines
 
 
