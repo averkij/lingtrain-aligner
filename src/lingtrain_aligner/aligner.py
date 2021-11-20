@@ -410,13 +410,15 @@ def init_document_db(db_path):
         db.execute(
             'create table doc_index(id integer primary key, contents varchar)')
         db.execute(
-            'create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)')
-        db.execute(
             'create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)')
         db.execute(
-            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")')
+            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, line_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")')
         db.execute(
             'create table languages(id integer primary key, key text, val text)')
+        db.execute(
+            'create table segments(id integer primary key, left_from integer, left_to integer, right_from integer, right_to integer, insert_ts text, comment text)')
+        db.execute(
+            'create table batches(id integer primary key, batch_id integer unique, left_from integer, left_to integer, right_from integer, right_to integer, insert_ts text, shift integer, window integer)')
         db.execute(
             'create table version(id integer primary key, version text)')
         db.execute('insert into version(version) values (?)', (con.DB_VERSION,))
