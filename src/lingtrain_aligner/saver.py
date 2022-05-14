@@ -1,18 +1,13 @@
 """Output functions"""
 
 from datetime import datetime
-from lingtrain_aligner import helper, preprocessor, reader
+from lingtrain_aligner import helper, preprocessor, reader, i18n
 import json
 import xmltodict
 from lxml import etree
 
 
-CULTURE_LIST = {
-    "en": "en-US",
-    "zh": "zh-CN",
-    "ru": "ru-RU",
-    "de": "de-DE"
-}
+CULTURE_LIST = {"en": "en-US", "zh": "zh-CN", "ru": "ru-RU", "de": "de-DE"}
 
 DEFAULT_CULTURE = "en"
 
@@ -38,23 +33,26 @@ TMX_BLOCK = """
 JSON_FORMAT_VERSION = "0.1"
 XML_FORMAT_VERSION = "0.1"
 
+
 def save_tmx(db_path, output_path, lang_from, lang_to):
     """Save text document in TMX format"""
-    tmx_template = TMX_BLOCK.format(timestamp=datetime.utcnow().strftime('%Y%m%dT%H%M%SZ'),
-                                    culture_from=get_culture(lang_from), culture_to=get_culture(lang_to))
+    tmx_template = TMX_BLOCK.format(
+        timestamp=datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+        culture_from=get_culture(lang_from),
+        culture_to=get_culture(lang_to),
+    )
     doc_from, doc_to = helper.read_processing(db_path)
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         doc_out.write(TMX_BEGIN)
         for f, t in zip(doc_from, doc_to):
-            doc_out.write(tmx_template.format(
-                text_from = f.strip(), text_to = t.strip()))
+            doc_out.write(tmx_template.format(text_from=f.strip(), text_to=t.strip()))
         doc_out.write(TMX_END)
 
 
 def save_plain_text(db_path, output_path, direction, batch_ids=[]):
     """Save text document in TXT format"""
     doc_from, doc_to = helper.read_processing(db_path, batch_ids)
-    to_save = doc_from if direction=="from" else doc_to
+    to_save = doc_from if direction == "from" else doc_to
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         text = "\n".join(to_save)
         doc_out.write(text)
@@ -77,7 +75,7 @@ def get_culture(lang_code):
     return CULTURE_LIST[DEFAULT_CULTURE]
 
 
-def save_json(db_path, output_path, lang_from, lang_to, direction = "to"):
+def save_json(db_path, output_path, lang_from, lang_to, direction="to"):
     """Save text document in JSON format"""
     text = export_json(db_path, [lang_from, lang_to], direction)
     print("JSON", type(text))
@@ -85,9 +83,9 @@ def save_json(db_path, output_path, lang_from, lang_to, direction = "to"):
         json.dump(text, doc_out, ensure_ascii=False, indent=3)
 
 
-def save_xml(db_path, output_path, lang_from, lang_to, direction = "to"):
+def save_xml(db_path, output_path, lang_from, lang_to, direction="to"):
     """Save text document in XML format"""
-    text = export_xml(db_path, [lang_from, lang_to], direction)
+    text = export_xml4pdf(db_path, [lang_from, lang_to], direction)
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         doc_out.write(text)
 
@@ -114,63 +112,80 @@ def write_next(next_mark, metas_dict, lang_ordered, add_string=False):
 def get_root(db_path, direction="to"):
     """Prepare root element for extracting"""
     paragraphs, delimeters, metas, sent_counter = reader.get_paragraphs(
-        db_path, direction)
+        db_path, direction
+    )
     reader.sort_meta(metas)
     min_par_len = min([len(paragraphs[x]) for x in paragraphs])
     min_par_len = min(min_par_len, len(delimeters))
     next_mark, next_meta_par_id = reader.get_next_meta_par_id(metas)
-    root = {"head":[], "body": []}
+    root = {"head": [], "body": []}
 
-    return root, paragraphs, delimeters, metas, sent_counter, min_par_len, next_mark, next_meta_par_id
+    return (
+        root,
+        paragraphs,
+        delimeters,
+        metas,
+        sent_counter,
+        min_par_len,
+        next_mark,
+        next_meta_par_id,
+    )
 
 
 def export_json(db_path, lang_ordered, direction="to"):
     """Export book in JSON format"""
-    root, paragraphs, delimeters, metas, sent_counter, par_len, next_mark, next_meta_par_id = get_root(db_path, direction)
+    (
+        root,
+        paragraphs,
+        delimeters,
+        metas,
+        sent_counter,
+        par_len,
+        next_mark,
+        next_meta_par_id,
+    ) = get_root(db_path, direction)
 
-    #head
+    # head
     root["head"] = {
-            "creator": "Lingtrain Alignment Studio",
-            "paragraphs": par_len,
-            "langs": [lang for lang in lang_ordered],
-            "sentences": sent_counter,
-            "author": { lang: reader.get_meta(metas["items"][lang], preprocessor.AUTHOR) for lang in lang_ordered},
-            "title": { lang: reader.get_meta(metas["items"][lang], preprocessor.TITLE) for lang in lang_ordered},
-            "version": JSON_FORMAT_VERSION
-        }
+        "creator": "Lingtrain Alignment Studio",
+        "paragraphs": par_len,
+        "langs": [lang for lang in lang_ordered],
+        "sentences": sent_counter,
+        "author": {
+            lang: reader.get_meta(metas["items"][lang], preprocessor.AUTHOR)
+            for lang in lang_ordered
+        },
+        "title": {
+            lang: reader.get_meta(metas["items"][lang], preprocessor.TITLE)
+            for lang in lang_ordered
+        },
+        "version": JSON_FORMAT_VERSION,
+    }
 
     for actual_paragraphs_id in range(par_len):
         real_par_id = delimeters[actual_paragraphs_id]
 
-        #marks
+        # marks
         while next_meta_par_id <= real_par_id:
             mark_item = write_next(next_mark, metas, lang_ordered)
             next_mark, next_meta_par_id = reader.get_next_meta_par_id(metas)
             content = {}
             for i, lang in enumerate(lang_ordered):
                 content[lang] = mark_item[i][1]
-            item = {
-                "t": mark_item[0][0],
-                "c": content,
-                "p": mark_item[0][2]
-            }
+            item = {"t": mark_item[0][0], "c": content, "p": mark_item[0][2]}
             root["body"].append(item)
-        
-        #sentences
+
+        # sentences
         content = {}
         for i, lang in enumerate(lang_ordered):
             content[lang] = []
             for _, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                 content[lang].append(sent)
-        item = {
-            "t": "text",
-            "c": content,
-            "p": real_par_id
-        }
+        item = {"t": "text", "c": content, "p": real_par_id}
         root["body"].append(item)
 
-    #transform unicode
-    root = json.dumps(root, ensure_ascii=False).encode('utf8')
+    # transform unicode
+    root = json.dumps(root, ensure_ascii=False).encode("utf8")
     root = root.decode()
 
     return root
@@ -178,35 +193,49 @@ def export_json(db_path, lang_ordered, direction="to"):
 
 def export_xml(db_path, lang_ordered, direction="to"):
     """Export book in XML format"""
-    root, paragraphs, delimeters, metas, sent_counter, par_len, next_mark, next_meta_par_id = get_root(db_path, direction)
+    (
+        root,
+        paragraphs,
+        delimeters,
+        metas,
+        sent_counter,
+        par_len,
+        next_mark,
+        next_meta_par_id,
+    ) = get_root(db_path, direction)
 
     root["@version"] = XML_FORMAT_VERSION
 
-    #head
+    # head
     root["head"] = {
-            "creationtool": "Lingtrain Alignment Studio",
-            "creationid": "LINGTRAIN",
-            "creationdate": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
-            "paragraphs": par_len,
-            "langs": { "lang": [] },
-            "author": { "s": [] },
-            "title": { "s": [] }
-        }
-    
+        "creationtool": "Lingtrain Alignment Studio",
+        "creationid": "LINGTRAIN",
+        "creationdate": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+        "paragraphs": par_len,
+        "langs": {"lang": []},
+        "author": {"s": []},
+        "title": {"s": []},
+        "contents": {"s": []},
+    }
     for lang in lang_ordered:
-        root["head"]["langs"]["lang"].append({ "@id": lang, "sentences": sent_counter[lang] })
+        root["head"]["langs"]["lang"].append(
+            {"@id": lang, "sentences": sent_counter[lang]}
+        )
         meta = metas["items"][lang]
         title = reader.get_meta(meta, preprocessor.TITLE)
         author = reader.get_meta(meta, preprocessor.AUTHOR)
-        root["head"]["author"]["s"].append({ "@lang": lang, "#text": author })
-        root["head"]["title"]["s"].append({ "@lang": lang, "#text": title })
+        root["head"]["author"]["s"].append({"@lang": lang, "#text": author})
+        root["head"]["title"]["s"].append({"@lang": lang, "#text": title})
+        root["head"]["contents"]["s"].append(
+            {"@lang": lang, "#text": i18n.get_contents_name(lang)}
+        )
 
-    #body
-    root["body"] = { "p": [] }
+    # body
+    root["body"] = {"p": []}
     for actual_paragraphs_id in range(par_len):
         real_par_id = delimeters[actual_paragraphs_id]
 
-        #marks
+        # marks
         while next_meta_par_id <= real_par_id:
             mark_item = write_next(next_mark, metas, lang_ordered)
             next_mark, next_meta_par_id = reader.get_next_meta_par_id(metas)
@@ -215,43 +244,149 @@ def export_xml(db_path, lang_ordered, direction="to"):
             for i, lang in enumerate(lang_ordered):
                 sentences.append(sent_item(lang, mark_item[i][1]))
 
-            root["body"]["p"].append({
-                "@type": mark_item[0][0],
-                "@id": mark_item[0][2],
-                "sentence": [ {"su": sentences } ]
-                })
+            root["body"]["p"].append(
+                {
+                    "@type": mark_item[0][0],
+                    "@id": mark_item[0][2],
+                    "sentence": [{"su": sentences}],
+                }
+            )
 
-        #sentences
+        # sentences
         sentences = []
         for i in range(len(paragraphs[lang_ordered[0]][actual_paragraphs_id])):
             sentence_pair = []
             for lang in lang_ordered:
-                sentence_pair.append(sent_item(lang, paragraphs[lang][actual_paragraphs_id][i]))
+                sentence_pair.append(
+                    sent_item(lang, paragraphs[lang][actual_paragraphs_id][i])
+                )
 
-            item = {
-                "su": sentence_pair
-            }
+            item = {"su": sentence_pair}
             sentences.append(item)
 
-        root["body"]["p"].append({
-                "@type": "text",
-                "@id": real_par_id,
-                "sentence": sentences})
+        root["body"]["p"].append(
+            {"@type": "text", "@id": real_par_id, "sentence": sentences}
+        )
 
-    root = xmltodict.unparse({ "book": root }, )
-    
-    parser = etree.XMLParser( remove_blank_text=True )
-    tree = etree.fromstring( bytes( root, encoding='utf-8' ), parser=parser )
-    root =  etree.tostring( tree, pretty_print=True, 
-                            encoding='utf-8', xml_declaration=True ).decode()
+    root = xmltodict.unparse(
+        {"book": root},
+    )
+
+    parser = etree.XMLParser(remove_blank_text=True)
+    tree = etree.fromstring(bytes(root, encoding="utf-8"), parser=parser)
+    root = etree.tostring(
+        tree, pretty_print=True, encoding="utf-8", xml_declaration=True
+    ).decode()
+
+    return root
+
+
+def export_xml4pdf(db_path, lang_ordered, direction="to"):
+    """Export book in XML format for PDF creation pipeline"""
+    (
+        root,
+        paragraphs,
+        delimeters,
+        metas,
+        sent_counter,
+        par_len,
+        next_mark,
+        next_meta_par_id,
+    ) = get_root(db_path, direction)
+
+    root["@version"] = XML_FORMAT_VERSION
+
+    # head
+    root["head"] = {
+        "creationtool": "Lingtrain Alignment Studio",
+        "creationid": "LINGTRAIN",
+        "creationdate": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+        "paragraphs": par_len,
+        "langs": {"lang": []},
+        "author": {"s": []},
+        "title": {"s": []},
+        "contents": {"s": []},
+    }
+    for lang in lang_ordered:
+        root["head"]["langs"]["lang"].append(
+            {"@id": lang, "sentences": sent_counter[lang]}
+        )
+        meta = metas["items"][lang]
+        title = reader.get_meta(meta, preprocessor.TITLE)
+        author = reader.get_meta(meta, preprocessor.AUTHOR)
+        root["head"]["author"]["s"].append({"@lang": lang, "#text": author})
+        root["head"]["title"]["s"].append({"@lang": lang, "#text": title})
+        root["head"]["contents"]["s"].append(
+            {"@lang": lang, "#text": i18n.get_contents_name(lang)}
+        )
+
+    # body
+    root["body"] = {"section": []}
+
+    # default section if text without any sections at all
+    curr_section = {"@type": "default", "header": {"su": []}, "p": []}
+    for i, lang in enumerate(lang_ordered):
+        curr_section["header"]["su"].append(sent_item(lang, ""))
+
+    for actual_paragraphs_id in range(par_len):
+        real_par_id = delimeters[actual_paragraphs_id]
+
+        # marks
+        while next_meta_par_id <= real_par_id:
+            mark_item = write_next(next_mark, metas, lang_ordered)
+            next_mark, next_meta_par_id = reader.get_next_meta_par_id(metas)
+
+            if mark_item[0][0] == preprocessor.H2:
+                # add previous section and start new
+                if curr_section["p"]:
+                    root["body"]["section"].append(curr_section)
+
+                curr_section = {
+                    "@type": mark_item[0][0],
+                    "header": {"su": []},
+                    "p": [],
+                }
+
+                for i, lang in enumerate(lang_ordered):
+                    print(mark_item)
+                    curr_section["header"]["su"].append(
+                        sent_item(lang, mark_item[i][1])
+                    )
+
+        # sentences
+        sentences = []
+        for i in range(len(paragraphs[lang_ordered[0]][actual_paragraphs_id])):
+            sentence_pair = []
+            for lang in lang_ordered:
+                sentence_pair.append(
+                    sent_item(lang, paragraphs[lang][actual_paragraphs_id][i])
+                )
+
+            item = {"su": sentence_pair}
+            sentences.append(item)
+
+        curr_section["p"].append(
+            {"@type": "text", "@id": real_par_id, "sentence": sentences}
+        )
+
+    # add last section
+    if curr_section["p"]:
+        root["body"]["section"].append(curr_section)
+
+    root = xmltodict.unparse(
+        {"book": root},
+    )
+
+    parser = etree.XMLParser(remove_blank_text=True)
+    tree = etree.fromstring(bytes(root, encoding="utf-8"), parser=parser)
+    root = etree.tostring(
+        tree, pretty_print=True, encoding="utf-8", xml_declaration=True
+    ).decode()
 
     return root
 
 
 def sent_item(lang, text):
     """Get xml sentence item"""
-    item = {
-        "@lang": lang,
-        "#text": text
-        }
+    item = {"@lang": lang, "#text": text}
     return item
