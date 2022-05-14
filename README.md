@@ -4,6 +4,9 @@
 
 ML powered library for the accurate texts alignment in different languages.
 
+- 🔥 [How to create bilingual books. Part 2. Lingtrain Alignment Studio](https://habr.com/ru/post/590549/)
+- 💡 [Lingtrain Aligner. How to make parallel books for language learning. Part 1. Python and Colab version](https://habr.com/ru/post/586574/)
+
 ![Cover](https://i.imgur.com/WQWB4v0.png)
 
 ## Purpose
