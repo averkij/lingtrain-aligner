@@ -1,14 +1,18 @@
 """Output functions"""
 
 from datetime import datetime
-from lingtrain_aligner import helper, preprocessor, reader, i18n
+from lingtrain_aligner import helper, preprocessor, reader, i18n, splitter
 import json
 import xmltodict
 from lxml import etree
+import re
+from pypinyin import pinyin
+import pykakasi
 
+CJK_PAT = re.compile(r"[\u4e00-\u9fff]+")
+KAKASI = pykakasi.kakasi()
 
 CULTURE_LIST = {"en": "en-US", "zh": "zh-CN", "ru": "ru-RU", "de": "de-DE"}
-
 DEFAULT_CULTURE = "en"
 
 TMX_BEGIN = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -204,6 +208,8 @@ def export_xml(db_path, lang_ordered, direction="to"):
         next_meta_par_id,
     ) = get_root(db_path, direction)
 
+    print(delimeters)
+
     root["@version"] = XML_FORMAT_VERSION
 
     # head
@@ -348,7 +354,6 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
                 }
 
                 for i, lang in enumerate(lang_ordered):
-                    print(mark_item)
                     curr_section["header"]["su"].append(
                         sent_item(lang, mark_item[i][1])
                     )
@@ -359,7 +364,9 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
             sentence_pair = []
             for lang in lang_ordered:
                 sentence_pair.append(
-                    sent_item(lang, paragraphs[lang][actual_paragraphs_id][i])
+                    sent_item(
+                        lang, paragraphs[lang][actual_paragraphs_id][i], add_tip=True
+                    )
                 )
 
             item = {"su": sentence_pair}
@@ -386,7 +393,52 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
     return root
 
 
-def sent_item(lang, text):
+def sent_item(lang, text, add_tip=False):
     """Get xml sentence item"""
     item = {"@lang": lang, "#text": text}
+
+    if add_tip:
+        if lang == splitter.ZH_CODE:
+            item = {"@lang": lang, "r": []}
+            item["r"] = to_ruby_xml_zh(text)
+        elif lang == splitter.JP_CODE:
+            item = {"@lang": lang, "r": []}
+            item["r"] = to_ruby_xml_jp(text)
+        return item
+
     return item
+
+
+def to_ruby_xml_zh(text):
+    res = []
+    for ch in text:
+        if CJK_PAT.match(ch):
+            pin = pinyin(ch)
+            res.append({"c": ch, "f": pin[0][0]})
+        else:
+            res.append({"c": ch, "f": ""})
+    return res
+
+
+def to_ruby_xml_jp(text):
+    res = []
+    for item in KAKASI.convert(text):
+        sub = item["orig"]
+        hira = item["hira"]
+        if CJK_PAT.match(sub):
+            ending = ""
+            if sub[-1] != hira[-1]:
+                res.append({"c": sub, "f": hira})
+            else:
+                for i in range(len(sub)):
+                    if sub[~i] == hira[~i]:
+                        ending += sub[~i]
+                    else:
+                        print(i)
+                        res.append({"c": sub[:-i], "f": hira[:-i]})
+                        if ending:
+                            res.append({"c": ending[::-1], "f": ""})
+                        break
+        else:
+            res.append({"c": sub, "f": ""})
+    return res

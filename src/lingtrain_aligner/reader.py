@@ -11,9 +11,17 @@ H3_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H3
 H4_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H4
 H5_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H5
 DIVIDER_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.DIVIDER
-MARKS = [preprocessor.H1, preprocessor.H2, preprocessor.H3,
-         preprocessor.H4, preprocessor.H5, preprocessor.DIVIDER,
-         preprocessor.QUOTE_TEXT, preprocessor.QUOTE_NAME, preprocessor.IMAGE]
+MARKS = [
+    preprocessor.H1,
+    preprocessor.H2,
+    preprocessor.H3,
+    preprocessor.H4,
+    preprocessor.H5,
+    preprocessor.DIVIDER,
+    preprocessor.QUOTE_TEXT,
+    preprocessor.QUOTE_NAME,
+    preprocessor.IMAGE,
+]
 
 
 def is_empty_cells(db_path):
@@ -24,7 +32,7 @@ def is_empty_cells(db_path):
         if len(from_ids) == 0 or len(to_ids) == 0:
             return True
     return False
-    
+
 
 def get_paragraphs(db_path, direction="from", par_amount=0):
     """Read all paragraphs with marks from database"""
@@ -35,7 +43,7 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     index = helper.get_flatten_doc_index(db_path)
     page = list(zip(index, range(len(index))))
 
-    data, _, __ = helper.get_doc_items(page, db_path)    
+    data, _, __ = helper.get_doc_items(page, db_path)
     lang_from, lang_to = helper.get_lang_codes(db_path)
 
     # extract paragraph info
@@ -63,7 +71,8 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     main_lang_code = lang_from if direction == "from" else lang_to
 
     gen_main = get_next_paragraph(
-        index, data, paragraphs_from_dict, paragraphs_to_dict, direction)
+        index, data, paragraphs_from_dict, paragraphs_to_dict, direction
+    )
 
     par_info, count = [], 0
     for par_from, par_to, par_id, _, _ in gen_main:
@@ -73,7 +82,11 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
             break
     par_info_list = list(zip(*par_info))
 
-    paragraphs_from, paragraphs_to, par_ids = par_info_list[0], par_info_list[1], par_info_list[2]
+    paragraphs_from, paragraphs_to, par_ids = (
+        par_info_list[0],
+        par_info_list[1],
+        par_info_list[2],
+    )
 
     paragraphs_dict[lang_from] = paragraphs_from
     paragraphs_dict[lang_to] = paragraphs_to
@@ -93,7 +106,13 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
     main_language_side = 1 if direction == "to" else 0
     target_language_side = 0 if direction == "to" else 1
 
-    indexes, datas, paragraphs_from_dicts, paragraphs_to_dicts, lang_codes = [], [], [], [], []
+    indexes, datas, paragraphs_from_dicts, paragraphs_to_dicts, lang_codes = (
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
     splitted_dict, meta_dict = dict(), dict()
     add_main_language = True
     for db_path in db_paths:
@@ -121,17 +140,21 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
         lang_codes.append(langs)
 
         # get metas and splitted dicts
-        splitted_target = helper.get_splitted_from(
-            db_path) if direction == "to" else helper.get_splitted_to(db_path)
+        splitted_target = (
+            helper.get_splitted_from(db_path)
+            if direction == "to"
+            else helper.get_splitted_to(db_path)
+        )
         meta = helper.get_meta_dict(db_path)
-        meta_dict[langs[target_language_side]] = prepare_meta(
-            meta, direction_main_lang)
+        meta_dict[langs[target_language_side]] = prepare_meta(meta, direction_main_lang)
         splitted_dict[langs[target_language_side]] = splitted_target
         if add_main_language:
-            meta_dict[langs[main_language_side]
-                      ] = prepare_meta(meta, direction)
-            splitted_main = helper.get_splitted_to(
-                db_path) if direction == "to" else helper.get_splitted_from(db_path)
+            meta_dict[langs[main_language_side]] = prepare_meta(meta, direction)
+            splitted_main = (
+                helper.get_splitted_to(db_path)
+                if direction == "to"
+                else helper.get_splitted_from(db_path)
+            )
             splitted_dict[langs[main_language_side]] = splitted_main
             main_lang_code = langs[main_language_side]
             add_main_language = False
@@ -140,38 +163,66 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
     sent_mapping_dict = dict()
 
     gen_0 = get_next_paragraph(
-        indexes[0], datas[0], paragraphs_from_dicts[0], paragraphs_to_dicts[0], direction)
-    par_info = [(par_id, par_sent_ids_from, par_sent_ids_to)
-                for _, _, par_id, par_sent_ids_from, par_sent_ids_to in gen_0]
+        indexes[0],
+        datas[0],
+        paragraphs_from_dicts[0],
+        paragraphs_to_dicts[0],
+        direction,
+    )
+    par_info = [
+        (par_id, par_sent_ids_from, par_sent_ids_to)
+        for _, _, par_id, par_sent_ids_from, par_sent_ids_to in gen_0
+    ]
 
     # sentences mapping in pragraphs
     sent_mapping_dict[lang_codes[0][target_language_side]] = {}
-    sent_mapping_dict[lang_codes[0][target_language_side]][lang_codes[0][target_language_side]] = [
-        (par_id, par_sent_ids_from) for par_id, par_sent_ids_from, _ in par_info]
-    sent_mapping_dict[lang_codes[0][target_language_side]][lang_codes[0][main_language_side]] = [
-        (par_id, par_sent_ids_to) for par_id, _, par_sent_ids_to in par_info]
+    sent_mapping_dict[lang_codes[0][target_language_side]][
+        lang_codes[0][target_language_side]
+    ] = [(par_id, par_sent_ids_from) for par_id, par_sent_ids_from, _ in par_info]
+    sent_mapping_dict[lang_codes[0][target_language_side]][
+        lang_codes[0][main_language_side]
+    ] = [(par_id, par_sent_ids_to) for par_id, _, par_sent_ids_to in par_info]
 
     par_ids = [par_id for par_id, _, _ in par_info]
-    for a, b, c, d, lang_code in zip(indexes[1:], datas[1:], paragraphs_from_dicts[1:], paragraphs_to_dicts[1:], lang_codes[1:]):
+    for a, b, c, d, lang_code in zip(
+        indexes[1:],
+        datas[1:],
+        paragraphs_from_dicts[1:],
+        paragraphs_to_dicts[1:],
+        lang_codes[1:],
+    ):
         gen_curr = get_next_paragraph(a, b, c, d, direction)
-        par_info_curr = [(par_id, sent_ids_from, sent_ids_to)
-                         for _, _, par_id, sent_ids_from, sent_ids_to in gen_curr]
+        par_info_curr = [
+            (par_id, sent_ids_from, sent_ids_to)
+            for _, _, par_id, sent_ids_from, sent_ids_to in gen_curr
+        ]
         sent_mapping_dict[lang_code[target_language_side]] = {}
-        sent_mapping_dict[lang_code[target_language_side]][lang_code[target_language_side]] = [
-            (par_id, par_sent_ids_from) for par_id, par_sent_ids_from, _ in par_info_curr]
-        sent_mapping_dict[lang_code[target_language_side]][lang_code[main_language_side]] = [
-            (par_id, par_sent_ids_to) for par_id, _, par_sent_ids_to in par_info_curr]
-        par_ids = merge_par_ids(
-            par_ids, [par_id for par_id, _, _ in par_info_curr])
+        sent_mapping_dict[lang_code[target_language_side]][
+            lang_code[target_language_side]
+        ] = [
+            (par_id, par_sent_ids_from)
+            for par_id, par_sent_ids_from, _ in par_info_curr
+        ]
+        sent_mapping_dict[lang_code[target_language_side]][
+            lang_code[main_language_side]
+        ] = [(par_id, par_sent_ids_to) for par_id, _, par_sent_ids_to in par_info_curr]
+        par_ids = merge_par_ids(par_ids, [par_id for par_id, _, _ in par_info_curr])
 
     # merge magic
     merge_sentences_mapping(sent_mapping_dict, par_ids)
     merged_mapping = merge_sent_mappings(
-        sent_mapping_dict, lang_codes, target_language_side, main_language_side)
+        sent_mapping_dict, lang_codes, target_language_side, main_language_side
+    )
     aux_mappings = get_auxiliary_mapping_dict(
-        sent_mapping_dict, lang_codes, target_language_side, main_language_side)
+        sent_mapping_dict, lang_codes, target_language_side, main_language_side
+    )
     aligned_mappings = get_aligned_sentence_mappings(
-        merged_mapping, aux_mappings, lang_codes, target_language_side, main_language_side)
+        merged_mapping,
+        aux_mappings,
+        lang_codes,
+        target_language_side,
+        main_language_side,
+    )
 
     for lang_code in aligned_mappings:
         count = 0
@@ -180,7 +231,7 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
         mapping = aligned_mappings[lang_code]
         curr_par = []
 
-        print(len(par_ids), "==",  len(mapping))
+        print(len(par_ids), "==", len(mapping))
 
         for i, par in enumerate(mapping):
             if par_amount == 0 or count < par_amount:
@@ -195,15 +246,19 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
     return paragraphs_dict, par_ids, meta_info
 
 
-def get_aligned_sentence_mappings(mapping_merged, aux_mappings, lang_codes, target_language_side, main_language_side):
+def get_aligned_sentence_mappings(
+    mapping_merged, aux_mappings, lang_codes, target_language_side, main_language_side
+):
     """Get aligned sentence mappings per paragraph"""
     # init
     new_sent_mappings = {}
     for langs in lang_codes:
-        new_sent_mappings[langs[target_language_side]] = [[]
-                                                          for _ in range(len(mapping_merged))]
-    new_sent_mappings[lang_codes[0][main_language_side]] = [[]
-                                                            for _ in range(len(mapping_merged))]
+        new_sent_mappings[langs[target_language_side]] = [
+            [] for _ in range(len(mapping_merged))
+        ]
+    new_sent_mappings[lang_codes[0][main_language_side]] = [
+        [] for _ in range(len(mapping_merged))
+    ]
 
     add_main_language = True
     for langs in lang_codes:
@@ -232,52 +287,71 @@ def get_aligned_sentence_mappings(mapping_merged, aux_mappings, lang_codes, targ
     return new_sent_mappings
 
 
-def get_auxiliary_mapping_dict(sent_mapping_dict, lang_codes, target_language_side, main_language_side):
+def get_auxiliary_mapping_dict(
+    sent_mapping_dict, lang_codes, target_language_side, main_language_side
+):
     """Calculate auxiliary mappings which we will use for back mapping"""
     sent_aux_mapping_dict = {}
     for langs in lang_codes:
         sent_aux_mapping_dict[langs[target_language_side]] = {}
-        sent_aux_mapping_dict[langs[target_language_side]
-                              ][langs[target_language_side]] = []
-        sent_aux_mapping_dict[langs[target_language_side]
-                              ][langs[main_language_side]] = {}
+        sent_aux_mapping_dict[langs[target_language_side]][
+            langs[target_language_side]
+        ] = []
+        sent_aux_mapping_dict[langs[target_language_side]][
+            langs[main_language_side]
+        ] = {}
 
     for langs in lang_codes:
         counter = 0
         target_lang = langs[target_language_side]
         main_lang = langs[main_language_side]
         for i in range(len(sent_mapping_dict[target_lang][target_lang])):
-            for a, b in zip(sent_mapping_dict[target_lang][target_lang][i], sent_mapping_dict[target_lang][main_lang][i]):
+            for a, b in zip(
+                sent_mapping_dict[target_lang][target_lang][i],
+                sent_mapping_dict[target_lang][main_lang][i],
+            ):
                 sent_aux_mapping_dict[target_lang][target_lang].append(a)
-                sent_aux_mapping_dict[target_lang][main_lang][(
-                    tuple(b))] = counter
+                sent_aux_mapping_dict[target_lang][main_lang][(tuple(b))] = counter
                 counter += 1
     return sent_aux_mapping_dict
 
 
-def merge_sent_mappings(sent_mapping_dict, lang_codes, target_language_side, main_language_side):
+def merge_sent_mappings(
+    sent_mapping_dict, lang_codes, target_language_side, main_language_side
+):
     """Calculate one merge sentence mapping"""
     res, curr, merged_res = [], [], []
     mapping_dict = copy.deepcopy(sent_mapping_dict)
     main_lang_code = lang_codes[0][main_language_side]
 
-    min_len = min([len(mapping_dict[langs[target_language_side]]
-                       [main_lang_code]) for langs in lang_codes])
+    min_len = min(
+        [
+            len(mapping_dict[langs[target_language_side]][main_lang_code])
+            for langs in lang_codes
+        ]
+    )
     print("min_len", min_len)
 
-    mapping_merged = mapping_dict[lang_codes[0]
-                                  [target_language_side]][main_lang_code]
+    mapping_merged = mapping_dict[lang_codes[0][target_language_side]][main_lang_code]
     for langs in lang_codes[1:]:
-        mapping_curr = mapping_dict[langs[target_language_side]
-                                    ][main_lang_code]
+        mapping_curr = mapping_dict[langs[target_language_side]][main_lang_code]
         for i in range(min_len):
             left, right = mapping_merged[i].pop(0), mapping_curr[i].pop(0)
 
             # print("merge_sub_arrays------------ left, right", left, right)
             # print(mapping_merged[i], mapping_curr[i])
 
-            merge_sub_arrays(res, curr, mapping_merged[i], mapping_curr[i], left, right, len(
-                left), len(right), left)
+            merge_sub_arrays(
+                res,
+                curr,
+                mapping_merged[i],
+                mapping_curr[i],
+                left,
+                right,
+                len(left),
+                len(right),
+                left,
+            )
             merged_res.append(res)
             res, curr = [], []
         mapping_merged, merged_res = merged_res, []
@@ -294,14 +368,23 @@ def merge_sentences_mapping(sent_mapping_dict, par_ids):
             res[0].extend(sent_mapping_dict[target_lang_code][lang][0][1])
 
             for i, par_id in enumerate(par_ids[1:]):
-                while len(sent_mapping_dict[target_lang_code][lang]) > curr_par_id and sent_mapping_dict[target_lang_code][lang][curr_par_id][0] <= par_id:
+                while (
+                    len(sent_mapping_dict[target_lang_code][lang]) > curr_par_id
+                    and sent_mapping_dict[target_lang_code][lang][curr_par_id][0]
+                    <= par_id
+                ):
 
-                    if sent_mapping_dict[target_lang_code][lang][curr_par_id][0] < par_id:
-                        res[i+1].extend(sent_mapping_dict[target_lang_code]
-                                        [lang][curr_par_id][1])
+                    if (
+                        sent_mapping_dict[target_lang_code][lang][curr_par_id][0]
+                        < par_id
+                    ):
+                        res[i + 1].extend(
+                            sent_mapping_dict[target_lang_code][lang][curr_par_id][1]
+                        )
                     else:
-                        res[i+1].extend(sent_mapping_dict[target_lang_code]
-                                        [lang][curr_par_id][1])
+                        res[i + 1].extend(
+                            sent_mapping_dict[target_lang_code][lang][curr_par_id][1]
+                        )
 
                     curr_par_id += 1
 
@@ -321,18 +404,35 @@ def merge_sub_arrays(res, curr, a, b, left, right, len1, len2, to_append):
         res.append(curr)
         if len(a) > 0 and len(b) > 0:
             left, right = a.pop(0), b.pop(0)
-            merge_sub_arrays(res, [], a, b, left, right,
-                             len(left), len(right), left)
+            merge_sub_arrays(res, [], a, b, left, right, len(left), len(right), left)
     elif len1 > len2:
         curr.extend(right)
         right_next = b.pop(0)
-        merge_sub_arrays(res, curr, a, b, [
-                         x for x in left if x not in right], right_next, len1, len2 + len(right_next), right_next)
+        merge_sub_arrays(
+            res,
+            curr,
+            a,
+            b,
+            [x for x in left if x not in right],
+            right_next,
+            len1,
+            len2 + len(right_next),
+            right_next,
+        )
     else:
         curr.extend(left)
         left_next = a.pop(0)
-        merge_sub_arrays(res, curr, a, b, left_next, [
-                         x for x in right if x not in left], len1 + len(left_next), len2, left_next)
+        merge_sub_arrays(
+            res,
+            curr,
+            a,
+            b,
+            left_next,
+            [x for x in right if x not in left],
+            len1 + len(left_next),
+            len2,
+            left_next,
+        )
 
 
 # TODO OPTIMIZE
@@ -373,7 +473,9 @@ def merge_par_ids(par_ids1, par_ids2):
     return res
 
 
-def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, direction="from"):
+def get_next_paragraph(
+    index, data, paragraphs_from_dict, paragraphs_to_dict, direction="from"
+):
     """Next paragraph generator"""
     if direction == "from":
         prev_meta_max = paragraphs_from_dict[json.loads(index[0][0][1])[-1]]
@@ -384,13 +486,12 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
 
     curr_from, curr_to = [data[0]["text_from"]], [data[0]["text_to"]]
     curr_splitted_ids_from, curr_splitted_ids_to = [json.loads(index[0][0][1])], [
-        json.loads(index[0][0][3])]
+        json.loads(index[0][0][3])
+    ]
 
     for item, texts in zip(index[1:], data[1:]):
-        fid_min, fid_max = min(json.loads(item[0][1])), max(
-            json.loads(item[0][1]))
-        tid_min, tid_max = min(json.loads(item[0][3])), max(
-            json.loads(item[0][3]))
+        fid_min, fid_max = min(json.loads(item[0][1])), max(json.loads(item[0][1]))
+        tid_min, tid_max = min(json.loads(item[0][3])), max(json.loads(item[0][3]))
 
         if direction == "from":
             curr_paragraph_min = paragraphs_from_dict[fid_min][0]
@@ -412,8 +513,9 @@ def get_next_paragraph(index, data, paragraphs_from_dict, paragraphs_to_dict, di
 
             prev_paragraph_max = curr_paragraph_max
             curr_from, curr_to = [texts["text_from"]], [texts["text_to"]]
-            curr_splitted_ids_from, curr_splitted_ids_to = [
-                json.loads(item[0][1])], [json.loads(item[0][3])]
+            curr_splitted_ids_from, curr_splitted_ids_to = [json.loads(item[0][1])], [
+                json.loads(item[0][3])
+            ]
 
     yield curr_from, curr_to, prev_paragraph_max, curr_splitted_ids_from, curr_splitted_ids_to
 
@@ -424,7 +526,17 @@ def sort_meta(metas):
             metas["items"][lang][mark].sort(key=lambda x: x[2])
 
 
-def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, output_path, template, styles=[], highlight="through"):
+def create_book(
+    lang_ordered,
+    paragraphs,
+    delimeters,
+    metas,
+    sent_counter,
+    output_path,
+    template,
+    styles=[],
+    highlight="through",
+):
     """Generate html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -438,7 +550,7 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
     else:
         css = generate_css([])
         sent_cycle = 2
-    
+
     meta = sort_meta(metas)
 
     min_par_len = min([len(paragraphs[x]) for x in paragraphs])
@@ -452,7 +564,8 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
-        res_html.write(f"""
+        res_html.write(
+            f"""
 <html><head>
     <link rel="preconnect" href="https://fonts.gstatic.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400&display=swap" rel="stylesheet">
@@ -462,7 +575,8 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
     {css}
 </head>
 <body>
-<div class="lt-header">🚀 lingtrain parallel book 🡒 {header_text} 🡒 {min_par_len} paragpaphs</div>""")
+<div class="lt-header">🚀 lingtrain parallel book 🡒 {header_text} 🡒 {min_par_len} paragpaphs</div>"""
+        )
 
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
@@ -471,10 +585,11 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
         res_html.write("<div class='dt-row header'>")
         for _ in range(len(lang_ordered)):
             res_html.write(
-                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>")
+                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+            )
         res_html.write("</div>")
 
-        #--------------------TITLE and AUTHOR
+        # --------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header title-cell'>")
         for lang in lang_ordered:
             res_html.write("<div class='title-cell dt-cell'>")
@@ -503,15 +618,22 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
             while next_meta_par_id <= real_par_id:
                 _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
                 next_mark, next_meta_par_id = get_next_meta_par_id(metas)
-            
+
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-                
-                res_html.write(f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>")
+
+                res_html.write(
+                    f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
+                )
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                    sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
+                    sent_cycle_index = (
+                        (j + k) % sent_cycle
+                        if highlight == "through"
+                        else k % sent_cycle
+                    )
                     res_html.write(
-                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>")
+                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>"
+                    )
                 res_html.write("</div>")
 
             j += len(paragraphs[lang][actual_paragraphs_id])
@@ -526,7 +648,16 @@ def create_book(lang_ordered, paragraphs, delimeters, metas, sent_counter, outpu
         res_html.write("</body></html>")
 
 
-def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, template, styles=[], highlight="through"):
+def create_polybook(
+    lang_ordered,
+    paragraphs,
+    delimeters,
+    metas,
+    output_path,
+    template,
+    styles=[],
+    highlight="through",
+):
     """Generate multilingual html"""
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -546,7 +677,8 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
 
     with open(output_path, "w", encoding="utf8") as res_html:
         # --------------------HEAD
-        res_html.write(f"""
+        res_html.write(
+            f"""
 <html><head>
     <meta charset="utf-8">
     <link rel="preconnect" href="https://fonts.gstatic.com">
@@ -557,7 +689,8 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
     {css}
 </head>
 <body>
-<div class="lt-header">🚀 created in lingtrain alignment studio</div>""")
+<div class="lt-header">🚀 created in lingtrain alignment studio</div>"""
+        )
 
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
@@ -566,10 +699,11 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         res_html.write("<div class='dt-row header'>")
         for _ in range(langs_count):
             res_html.write(
-                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>")
+                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+            )
         res_html.write("</div>")
 
-        #--------------------TITLE and AUTHOR
+        # --------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header title-cell'>")
         for lang in lang_ordered:
             res_html.write("<div class='title-cell dt-cell'>")
@@ -592,7 +726,7 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         # --------------------PARAGRAPHS
         next_mark, next_meta_par_id = get_next_meta_par_id(metas)
         min_par_len = min([len(paragraphs[x]) for x in paragraphs])
-        
+
         j = 0
         for actual_paragraphs_id in range(min_par_len):
             real_par_id = delimeters[actual_paragraphs_id]
@@ -603,13 +737,18 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
 
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-                
+
                 res_html.write(f"<div class='par dt-cell'>  ")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                    sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
+                    sent_cycle_index = (
+                        (j + k) % sent_cycle
+                        if highlight == "through"
+                        else k % sent_cycle
+                    )
                     res_html.write(
-                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>")
+                        f"<span class='s s{sent_cycle_index%sent_cycle}'>{sent}</span>"
+                    )
                 res_html.write("</div>")
 
             j += len(paragraphs[lang][actual_paragraphs_id])
@@ -624,7 +763,16 @@ def create_polybook(lang_ordered, paragraphs, delimeters, metas, output_path, te
         res_html.write("</body></html>")
 
 
-def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, template, styles=[], par_amount=0, highlight="through"):
+def create_polybook_preview(
+    lang_ordered,
+    paragraphs,
+    delimeters,
+    metas,
+    template,
+    styles=[],
+    par_amount=0,
+    highlight="through",
+):
     """Generate multiligual html preview"""
     # ensure path is existed
     langs_count = len(lang_ordered)
@@ -646,14 +794,13 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
     # --------------------BOOK
     res_html += "<div class='dt cont'>"
 
-
     # --------------------DIVIDER
     res_html += "<div class='dt-row header'>"
     for _ in range(langs_count):
         res_html += f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
     res_html += "</div>"
 
-    #--------------------TITLE and AUTHOR
+    # --------------------TITLE and AUTHOR
     res_html += "<div class='dt-row header title-cell'>"
     for lang in lang_ordered:
         res_html += "<div class='title-cell dt-cell'>"
@@ -684,7 +831,9 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
         real_par_id = delimeters[actual_paragraphs_id]
 
         while next_meta_par_id <= real_par_id:
-            res_html = write_next_polyheader(res_html, next_mark, metas, lang_ordered, add_string=True)
+            res_html = write_next_polyheader(
+                res_html, next_mark, metas, lang_ordered, add_string=True
+            )
             next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
         res_html += "<div class='dt-row'>"
@@ -692,8 +841,12 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
             res_html += f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
 
             for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
-                sent_cycle_index = (j+k) % sent_cycle if highlight == "through" else k % sent_cycle
-                res_html += f"<span class='s s{sent_cycle_index} {template}'>{sent}</span>"
+                sent_cycle_index = (
+                    (j + k) % sent_cycle if highlight == "through" else k % sent_cycle
+                )
+                res_html += (
+                    f"<span class='s s{sent_cycle_index} {template}'>{sent}</span>"
+                )
 
             res_html += "</div>"
         j += len(paragraphs[lang][actual_paragraphs_id])
@@ -707,7 +860,7 @@ def create_polybook_preview(lang_ordered, paragraphs, delimeters, metas, templat
 def get_next_meta_par_id(metas):
     lang_code = metas["main_lang_code"]
     meta = metas["items"][lang_code]
-    min_par_id = float('Inf')
+    min_par_id = float("Inf")
     next_mark = ""
 
     for mark in MARKS:
@@ -720,7 +873,9 @@ def get_next_meta_par_id(metas):
     return next_mark, min_par_id
 
 
-def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_string=False):
+def write_next_polyheader(
+    writer, next_mark, metas_dict, lang_ordered, add_string=False
+):
     """Write next header to string or stream"""
     metas = metas_dict["items"]
     main_lang_code = metas_dict["main_lang_code"]
@@ -729,13 +884,15 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
     else:
         writer.write("<div class='dt-row header'>")
     for lang in lang_ordered:
-        #divider is a special case
+        # divider is a special case
         if next_mark == preprocessor.DIVIDER:
             el = f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
             if next_mark in metas[lang] and metas[lang][next_mark]:
                 metas[lang][next_mark].pop(0)
-            if add_string: writer += el
-            else: writer.write(el)
+            if add_string:
+                writer += el
+            else:
+                writer.write(el)
             continue
 
         meta = metas[lang][next_mark]
@@ -752,11 +909,15 @@ def write_next_polyheader(writer, next_mark, metas_dict, lang_ordered, add_strin
         else:
             el = f"<div class='par dt-cell'><{HEADER_HTML_MAPPING[next_mark]}>{val[0]}</{HEADER_HTML_MAPPING[next_mark]}></div>"
 
-        if add_string: writer += el
-        else: writer.write(el)
+        if add_string:
+            writer += el
+        else:
+            writer.write(el)
 
-    if add_string: writer += "</div>"
-    else: writer.write("</div>")
+    if add_string:
+        writer += "</div>"
+    else:
+        writer.write("</div>")
 
     # pop main lang if not yet popped
     if main_lang_code not in lang_ordered:
@@ -772,7 +933,7 @@ def prepare_meta(meta, direction):
     for key in meta:
         if key.endswith(direction):
             # trim direction, leave mark only
-            res[key[:len(key)-len(direction)-1]] = meta[key]
+            res[key[: len(key) - len(direction) - 1]] = meta[key]
     return res
 
 
@@ -780,7 +941,7 @@ def get_meta(meta, mark, occurence=0):
     """Get prepared meta value"""
     if len(meta[mark]) > occurence:
         return meta[mark][occurence][0]
-    return ''
+    return ""
 
 
 def get_meta_from(meta, mark, occurence=0):
@@ -788,7 +949,7 @@ def get_meta_from(meta, mark, occurence=0):
     key = f"{mark}_from"
     if len(meta[key]) > occurence:
         return meta[key][occurence]
-    return ''
+    return ""
 
 
 def get_meta_to(meta, mark, occurence=0):
@@ -796,7 +957,7 @@ def get_meta_to(meta, mark, occurence=0):
     key = f"{mark}_to"
     if len(meta[key]) > occurence:
         return meta[key][occurence]
-    return ''
+    return ""
 
 
 def generate_css(styles, cols=2):
@@ -809,8 +970,11 @@ def generate_css(styles, cols=2):
         special += "\n}"
     col_width = f"{100 // cols}%"
 
-    res = CSS_TEMPLATE.replace("%GENERAL%", CSS_GENERAL).replace(
-        "%SPECIAL%", special).replace("%COL_WIDTH%", col_width)
+    res = (
+        CSS_TEMPLATE.replace("%GENERAL%", CSS_GENERAL)
+        .replace("%SPECIAL%", special)
+        .replace("%COL_WIDTH%", col_width)
+    )
     return res
 
 
@@ -819,7 +983,7 @@ HEADER_HTML_MAPPING = {
     preprocessor.H2: "h3",
     preprocessor.H3: "h3",
     preprocessor.H4: "h4",
-    preprocessor.H5: "h4"
+    preprocessor.H5: "h4",
 }
 
 # DIVIDER_URL = "https://habrastorage.org/webt/nr/av/qa/nravqa-wy0sg8kgwr3cfli8veym.png"
@@ -1040,12 +1204,12 @@ STYLES = {
         '{"background": "#cfefd7", "color": "black"}',
         '{"background": "#fadce2", "color": "black"}',
         '{"background": "#cce7eb", "color": "black"}',
-        '{"background": "#fefbd6", "color": "black"}'
+        '{"background": "#fefbd6", "color": "black"}',
     ],
     "pastel_start": [
         '{"background": "linear-gradient(90deg, #cfefd7 0px, #ffffff00 150px)", "border-radius": "15px"}',
         '{"background": "linear-gradient(90deg, #fadce2 0px, #ffffff00 150px)", "border-radius": "15px"}',
         '{"background": "linear-gradient(90deg, #cce7eb 0px, #ffffff00 150px)", "border-radius": "15px"}',
-        '{"background": "linear-gradient(90deg, #fefbd6 0px, #ffffff00 150px)", "border-radius": "15px"}'
-    ]
+        '{"background": "linear-gradient(90deg, #fefbd6 0px, #ffffff00 150px)", "border-radius": "15px"}',
+    ],
 }

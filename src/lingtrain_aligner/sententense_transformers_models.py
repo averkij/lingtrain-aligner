@@ -11,73 +11,93 @@ from transformers import AutoTokenizer, AutoModel
 
 # torch.backends.quantized.engine = 'qnnpack'
 
-SENTENCE_TRANSFORMERS_MODEL_PATH = './models/sentence_transformers-v2.bin'
-SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH = './models/sentence_transformers_xlm_100.bin'
-SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH = './models/labse.bin'
+SENTENCE_TRANSFORMERS_MODEL_PATH = "./models/sentence_transformers-v2.bin"
+SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH = "./models/sentence_transformers_xlm_100.bin"
+SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH = "./models/labse.bin"
+SENTENCE_TRANSFORMERS_RUBERT_TINY_MODEL_PATH = "./models/rubert-tiny.bin"
 
 
-class SentenceTransformersModel():
+class SentenceTransformersModel:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_MODEL_PATH):
             print("Loading saved distiluse-base-multilingual-cased-v2 model.")
             # self.model = torch.quantization.quantize_dynamic(pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, 'rb')), {torch.nn.Linear}, dtype=torch.qint8)
-            _model = pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, 'rb'))
+            _model = pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, "rb"))
             _model._target_device = device("cpu")  # patch
         else:
             print("Loading distiluse-base-multilingual-cased-v2 model from Internet.")
-            _model = SentenceTransformer(
-                'distiluse-base-multilingual-cased-v2')
+            _model = SentenceTransformer("distiluse-base-multilingual-cased-v2")
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
-        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
+        vecs = self.model.encode(
+            lines,
+            batch_size=batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+        )
         return vecs
 
 
-class SentenceTransformersModelXlm100():
+class SentenceTransformersModelXlm100:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH):
             print("Loading saved xlm-r-100langs-bert-base-nli-mean-tokens model.")
             # self.model = torch.quantization.quantize_dynamic(pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, 'rb')), {torch.nn.Linear}, dtype=torch.qint8)
-            _model = pickle.load(
-                open(SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH, 'rb'))
+            _model = pickle.load(open(SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH, "rb"))
             _model._target_device = device("cpu")  # patch
         else:
-            print("Loading xlm-r-100langs-bert-base-nli-mean-tokens model from Internet.")
-            _model = SentenceTransformer(
-                'xlm-r-100langs-bert-base-nli-mean-tokens')
+            print(
+                "Loading xlm-r-100langs-bert-base-nli-mean-tokens model from Internet."
+            )
+            _model = SentenceTransformer("xlm-r-100langs-bert-base-nli-mean-tokens")
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
-        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
+        vecs = self.model.encode(
+            lines,
+            batch_size=batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+        )
         return vecs
 
 
-class SentenceTransformersModelLaBSE():
+class SentenceTransformersModelLaBSE:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH):
             print("Loading saved LaBSE model.")
-            _model = pickle.load(
-                open(SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH, 'rb'))
+            _model = pickle.load(open(SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH, "rb"))
             _model._target_device = device("cpu")  # patch
         else:
             print("Loading LaBSE model from Internet.")
-            _model = SentenceTransformer('LaBSE')
+            _model = SentenceTransformer("LaBSE")
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
-        vecs = self.model.encode(lines, batch_size=batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
+        vecs = self.model.encode(
+            lines,
+            batch_size=batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+        )
         return vecs
 
 
-class RuBertTinyModel():
+class RuBertTinyModel:
     @lazy_property
     def model(self):
-        print("Loading rubert tiny model from Internet.")
-        _model = AutoModel.from_pretrained("cointegrated/rubert-tiny")
+        if os.path.isfile(SENTENCE_TRANSFORMERS_RUBERT_TINY_MODEL_PATH):
+            print("Loading saved rubert tiny model.")
+            _model = pickle.load(
+                open(SENTENCE_TRANSFORMERS_RUBERT_TINY_MODEL_PATH, "rb")
+            )
+        else:
+            print("Loading rubert tiny model from Internet.")
+            _model = AutoModel.from_pretrained("cointegrated/rubert-tiny")
         return _model
 
     @lazy_property
@@ -89,14 +109,13 @@ class RuBertTinyModel():
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
         vecs = []
         for text in lines:
-            t = self.tokenizer(text, padding=True, truncation=True, return_tensors='pt')
+            t = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt")
             with torch.no_grad():
                 model_output = self.model(**t)
             embeddings = model_output.last_hidden_state[:, 0, :]
             embeddings = torch.nn.functional.normalize(embeddings)
             vecs.append(embeddings[0].cpu().numpy())
         return vecs
-
 
 
 sentence_transformers_model = SentenceTransformersModel()
