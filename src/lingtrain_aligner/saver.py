@@ -79,17 +79,17 @@ def get_culture(lang_code):
     return CULTURE_LIST[DEFAULT_CULTURE]
 
 
-def save_json(db_path, output_path, lang_from, lang_to, direction="to"):
+def save_json(db_path, output_path, lang_order, direction="to"):
     """Save text document in JSON format"""
-    text = export_json(db_path, [lang_from, lang_to], direction)
+    text = export_json(db_path, lang_order, direction)
     print("JSON", type(text))
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         json.dump(text, doc_out, ensure_ascii=False, indent=3)
 
 
-def save_xml(db_path, output_path, lang_from, lang_to, direction="to"):
+def save_xml(db_path, output_path, lang_order, direction="to"):
     """Save text document in XML format"""
-    text = export_xml4pdf(db_path, [lang_from, lang_to], direction)
+    text = export_xml4pdf(db_path, lang_order, direction)
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         doc_out.write(text)
 
@@ -401,9 +401,9 @@ def sent_item(lang, text, add_tip=False):
         if lang == splitter.ZH_CODE:
             item = {"@lang": lang, "r": []}
             item["r"] = to_ruby_xml_zh(text)
-        elif lang == splitter.JP_CODE:
-            item = {"@lang": lang, "r": []}
-            item["r"] = to_ruby_xml_jp(text)
+        # elif lang == splitter.JP_CODE:
+        #     item = {"@lang": lang, "r": []}
+        #     item["r"] = to_ruby_xml_jp(text)
         return item
 
     return item
