@@ -97,13 +97,13 @@ class RuBertTinyModel:
             )
         else:
             print("Loading rubert tiny model from Internet.")
-            _model = AutoModel.from_pretrained("cointegrated/rubert-tiny")
+            _model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
         return _model
 
     @lazy_property
     def tokenizer(self):
         print("Loading rubert tiny tokenizer from Internet.")
-        _tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny")
+        _tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
         return _tokenizer
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
