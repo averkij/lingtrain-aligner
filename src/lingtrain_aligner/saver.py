@@ -35,7 +35,7 @@ TMX_BLOCK = """
         </tu>"""
 
 JSON_FORMAT_VERSION = "0.1"
-XML_FORMAT_VERSION = "0.1"
+XML_FORMAT_VERSION = "0.2"
 
 
 def save_tmx(db_path, output_path, lang_from, lang_to):
@@ -271,7 +271,11 @@ def export_xml(db_path, lang_ordered, direction="to"):
             sentences.append(item)
 
         root["body"]["p"].append(
-            {"@type": "text", "@id": real_par_id, "sentence": sentences}
+            {
+                "@type": "text",
+                "@id": real_par_id,
+                "sentence": sentences,
+            }
         )
 
     root = xmltodict.unparse(
@@ -334,6 +338,8 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
     for i, lang in enumerate(lang_ordered):
         curr_section["header"]["su"].append(sent_item(lang, ""))
 
+    par_id = 0
+    sent_id = 0
     for actual_paragraphs_id in range(par_len):
         real_par_id = delimeters[actual_paragraphs_id]
 
@@ -358,6 +364,32 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
                         sent_item(lang, mark_item[i][1])
                     )
 
+            if mark_item[0][0] == preprocessor.QUOTE_NAME:
+                sentence_pair = []
+                for i, lang in enumerate(lang_ordered):
+                    sentence_pair.append(sent_item(lang, mark_item[i][1]))
+                curr_section["p"].append(
+                    {
+                        "@type": "qname",
+                        "@id": par_id,
+                        "sentence": [{"su": sentence_pair}],
+                    }
+                )
+                par_id += 1
+
+            if mark_item[0][0] == preprocessor.QUOTE_TEXT:
+                sentence_pair = []
+                for i, lang in enumerate(lang_ordered):
+                    sentence_pair.append(sent_item(lang, mark_item[i][1]))
+                curr_section["p"].append(
+                    {
+                        "@type": "qtext",
+                        "@id": par_id,
+                        "sentence": [{"su": sentence_pair}],
+                    }
+                )
+                par_id += 1
+
         # sentences
         sentences = []
         for i in range(len(paragraphs[lang_ordered[0]][actual_paragraphs_id])):
@@ -369,12 +401,18 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
                     )
                 )
 
-            item = {"su": sentence_pair}
+            item = {"@id": sent_id, "su": sentence_pair}
             sentences.append(item)
+            sent_id += 1
 
         curr_section["p"].append(
-            {"@type": "text", "@id": real_par_id, "sentence": sentences}
+            {
+                "@type": "text",
+                "@id": par_id,
+                "sentence": sentences,
+            }
         )
+        par_id += 1
 
     # add last section
     if curr_section["p"]:
