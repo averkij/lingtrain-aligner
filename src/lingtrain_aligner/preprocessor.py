@@ -4,13 +4,13 @@ import dateparser
 
 from collections import defaultdict
 
-#preprocessing cleaning operations
+# preprocessing cleaning operations
 DELETE = "delete"
 SPLIT = "split"
 PASS = "pass"
 
 PARAGRAPH = "paragraph"
-H1, H2, H3, H4, H5 = "h1","h2","h3","h4","h5"
+H1, H2, H3, H4, H5 = "h1", "h2", "h3", "h4", "h5"
 DIVIDER = "divider"
 TITLE = "title"
 AUTHOR = "author"
@@ -19,15 +19,30 @@ QUOTE_TEXT = "qtext"
 QUOTE_NAME = "qname"
 IMAGE = "image"
 
-MARK_META = [H1, H2, H3, H4, H5, DIVIDER, TITLE, AUTHOR, QUOTE_TEXT, QUOTE_NAME, IMAGE, TRANSLATOR]
+MARK_META = [
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    DIVIDER,
+    TITLE,
+    AUTHOR,
+    QUOTE_TEXT,
+    QUOTE_NAME,
+    IMAGE,
+    TRANSLATOR,
+]
 
 MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 MARKS_FOR_ADDING = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 
 PARAGRAPH_MARK = "%%%%%"
-LINE_ENDINGS = [".","!","?",";",":","。","？","！", '"', "'"] #”
+LINE_ENDINGS = [".", "!", "?", ";", ":", "。", "？", "！", '"', "'"]  # ”
 
-headings_1 = re.compile(r"^часть .*$|^.* band$|^part .*$|^DÍL .*$|^capitolo .*$", re.IGNORECASE)
+headings_1 = re.compile(
+    r"^часть .*$|^.* band$|^part .*$|^DÍL .*$|^capitolo .*$", re.IGNORECASE
+)
 headings_2 = re.compile(r"^глава .*$|^.* teil$", re.IGNORECASE)
 
 arabic_nums = re.compile(r"^\d+$")
@@ -38,7 +53,7 @@ headings_inline = re.compile(r"^\d+\s+.*$|^\d+´.*$")
 
 misc_pat = re.compile(r"^x x x*$")
 
-#year range
+# year range
 years_range = re.compile(r"^15\d\d|16\d\d|17\d\d|18\d\d|19\d\d|20\d\d$")
 
 
@@ -49,29 +64,33 @@ def clean_artifacts(text, config=None, act=True):
 
         if re.match(page_number_pat, line):
             print("[page_num]:", line)
-            if act and config["page_num"] == DELETE: line = ''
+            if act and config["page_num"] == DELETE:
+                line = ""
 
-        if line and re.match(headings_inline, line) and not re.match(years_range, line):                
+        if line and re.match(headings_inline, line) and not re.match(years_range, line):
             num = re.search("\d+", line)
             print(f"[inline], is date: {is_date(line)}: [{num.group(0)}]", line)
             if act:
                 if config["date"] == PASS and is_date(line):
                     pass
                 elif config["inline"] == DELETE:
-                    line = ''
+                    line = ""
                 elif config["inline"] == SPLIT and num:
                     lines.append(num.group(0))
-                    line = line.replace(num.group(0), '', 1)
+                    line = line.replace(num.group(0), "", 1)
 
         if line and re.match(arabic_nums, line):
             print("[arabic]:", line)
-            if act and config["arabic"] == DELETE: line = ''
+            if act and config["arabic"] == DELETE:
+                line = ""
 
         if line and re.match(misc_pat, line):
             print("[misc]:", line)
-            if act and config["misc"] == DELETE: line = ''
+            if act and config["misc"] == DELETE:
+                line = ""
 
-        if line: lines.append(line.strip())
+        if line:
+            lines.append(line.strip())
 
     return lines
 
@@ -81,8 +100,10 @@ def find_artifacts(path):
 
 
 def mark_heading(line, action):
-    if action == DELETE: return ''
-    if action == PASS: return line
+    if action == DELETE:
+        return ""
+    if action == PASS:
+        return line
     marked = f"{line}{PARAGRAPH_MARK}{action}."
     return marked
 
@@ -97,39 +118,45 @@ def mark_headings(text, config=None, act=True):
         if re.match(headings_1, line):
             print("[type 1]:", line)
             end_prev = True
-            if act: line = mark_heading(line, config["type_1"])
+            if act:
+                line = mark_heading(line, config["type_1"])
 
         if re.match(headings_2, line):
             print("[type 2]:", line)
             end_prev = True
-            if act: line = mark_heading(line, config["type_2"])
+            if act:
+                line = mark_heading(line, config["type_2"])
 
         if line and re.match(roman_nums, line):
             print("[roman]:", line)
             end_prev = True
-            if act: line = mark_heading(line, config["roman"])
+            if act:
+                line = mark_heading(line, config["roman"])
 
         if line and re.match(arabic_nums, line):
             print("[arabic]:", line)
             end_prev = True
-            if act: line = mark_heading(line, config["arabic"])
+            if act:
+                line = mark_heading(line, config["arabic"])
 
         if line and re.match(headings_inline, line):
             if is_date(line):
                 print("[date]:", line)
                 end_prev = True
-                if act: line = mark_heading(line, config["date"])
+                if act:
+                    line = mark_heading(line, config["date"])
 
         if line and re.match(misc_pat, line):
             print("[misc]:", line)
             end_prev = True
-            if act: line = mark_heading(line, config["misc"])
-        
+            if act:
+                line = mark_heading(line, config["misc"])
+
         if line:
-            if end_prev and len(lines)>0:
+            if end_prev and len(lines) > 0:
                 prev_line = lines[-1]
                 if not prev_line.endswith(line_endings):
-                    lines[-1] = prev_line + '.' 
+                    lines[-1] = prev_line + "."
                     end_prev = False
             lines.append(line)
     return lines
@@ -140,7 +167,7 @@ def find_headings(text):
 
 
 def is_date(line):
-    res = dateparser.parse(line, languages=['ru','en','fr','it','de','zh'])
+    res = dateparser.parse(line, languages=["ru", "en", "fr", "it", "de", "zh"])
     return False if not res else True
 
 
@@ -156,31 +183,31 @@ def mark_paragraphs(lines):
 def parse_marked_line(line):
     """Parse marked line for UI view"""
     res = defaultdict(bool)
-    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
     if line.endswith(p_ending):
-        #remove last occurence of PARAGRAPH_MARK
-        line = ''.join(line.rsplit(PARAGRAPH_MARK, 1))
+        # remove last occurence of PARAGRAPH_MARK
+        line = "".join(line.rsplit(PARAGRAPH_MARK, 1))
         res["pa"] = True
     for mark in MARK_META:
         ending = f"{PARAGRAPH_MARK}{mark}."
         if line.endswith(ending):
             res[mark[:2]] = True
             res["pa"] = False
-            line = line[:len(line)-len(ending)]
+            line = line[: len(line) - len(ending)]
     res["text"] = line
     return res
 
 
 def extract_marks(res, line, ix):
     """Extract marks information in exists"""
-    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])    
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
     if line.endswith(p_ending):
-        #remove last occurence of PARAGRAPH_MARK
-        line = ''.join(line.rsplit(PARAGRAPH_MARK, 1))
+        # remove last occurence of PARAGRAPH_MARK
+        line = "".join(line.rsplit(PARAGRAPH_MARK, 1))
     for mark in MARK_META:
         ending = f"{PARAGRAPH_MARK}{mark}."
         if line.endswith(ending):
-            res.append((line[:len(line)-len(ending)], ix, mark))
+            res.append((line[: len(line) - len(ending)], ix, mark))
     return res
 
 

@@ -6,7 +6,7 @@ def chain_score(db_path, mode="to"):
     """Get chain score. Mode: ['to', 'both']"""
     index = helper.get_clear_flatten_doc_index(db_path)
 
-    #get flatten chains
+    # get flatten chains
     chain_from, chain_to = [], []
     for i, ix in enumerate(index):
         from_ids, to_ids = json.loads(ix[1]), json.loads(ix[3])
@@ -31,8 +31,8 @@ def get_breaks_amount(chain):
     res, chain_min = 0, min(chain)
     if chain[0] != chain_min:
         res += 1
-    for i,c in enumerate(chain[:-1]):
-        if chain[i+1] != c+1:
+    for i, c in enumerate(chain[:-1]):
+        if chain[i + 1] != c + 1:
             res += 1
     return res
 

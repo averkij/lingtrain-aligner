@@ -9,46 +9,69 @@ import sqlite3
 from collections import defaultdict
 
 import numpy as np
-from lingtrain_aligner import model_dispatcher, vis_helper, preprocessor, constants as con
+from lingtrain_aligner import (
+    model_dispatcher,
+    vis_helper,
+    preprocessor,
+    constants as con,
+)
 from scipy import spatial
 
 to_delete = re.compile(
-    r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+')
+    r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+'
+)
 
-def get_line_vectors(lines, model_name, embed_batch_size=10, normalize_embeddings=True, show_progress_bar=False, model=None):
+
+def get_line_vectors(
+    lines,
+    model_name,
+    embed_batch_size=10,
+    normalize_embeddings=True,
+    show_progress_bar=False,
+    model=None,
+):
     """Calculate embedding of the string"""
     if model:
-        return model.encode(lines, batch_size=embed_batch_size, normalize_embeddings=normalize_embeddings, show_progress_bar=show_progress_bar)
+        return model.encode(
+            lines,
+            batch_size=embed_batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+        )
     else:
-        return model_dispatcher.models[model_name].embed(lines, embed_batch_size, normalize_embeddings, show_progress_bar)
+        return model_dispatcher.models[model_name].embed(
+            lines, embed_batch_size, normalize_embeddings, show_progress_bar
+        )
 
 
 def clean_lines(lines):
     """Clean line"""
-    return [re.sub(to_delete, '', line) for line in lines]
+    return [re.sub(to_delete, "", line) for line in lines]
 
 
-def process_batch(lines_from_batch,
-                    lines_to_batch,
-                    proxy_from_batch,
-                    proxy_to_batch,
-                    line_ids_from,
-                    line_ids_to,
-                    batch_number,
-                    model_name,
-                    window,
-                    embed_batch_size,
-                    normalize_embeddings,
-                    show_progress_bar,
-                    save_pic=False,
-                    lang_name_from="",
-                    lang_name_to="",
-                    img_path="",
-                    show_info=False,
-                    show_regression=False,
-                    model=None,
-                    use_proxy_from=False,
-                    use_proxy_to=False):
+def process_batch(
+    lines_from_batch,
+    lines_to_batch,
+    proxy_from_batch,
+    proxy_to_batch,
+    line_ids_from,
+    line_ids_to,
+    batch_number,
+    model_name,
+    window,
+    embed_batch_size,
+    normalize_embeddings,
+    show_progress_bar,
+    save_pic=False,
+    lang_name_from="",
+    lang_name_to="",
+    img_path="",
+    show_info=False,
+    show_regression=False,
+    model=None,
+    use_proxy_from=False,
+    use_proxy_to=False,
+):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
@@ -57,17 +80,54 @@ def process_batch(lines_from_batch,
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
     if use_proxy_from:
-        vectors1 = [*get_line_vectors(proxy_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+        vectors1 = [
+            *get_line_vectors(
+                proxy_from_batch,
+                model_name,
+                embed_batch_size,
+                normalize_embeddings,
+                show_progress_bar,
+                model,
+            )
+        ]
     else:
-        vectors1 = [*get_line_vectors(lines_from_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+        vectors1 = [
+            *get_line_vectors(
+                lines_from_batch,
+                model_name,
+                embed_batch_size,
+                normalize_embeddings,
+                show_progress_bar,
+                model,
+            )
+        ]
 
     if use_proxy_to:
-        vectors2 = [*get_line_vectors(proxy_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+        vectors2 = [
+            *get_line_vectors(
+                proxy_to_batch,
+                model_name,
+                embed_batch_size,
+                normalize_embeddings,
+                show_progress_bar,
+                model,
+            )
+        ]
     else:
-        vectors2 = [*get_line_vectors(lines_to_batch, model_name, embed_batch_size, normalize_embeddings, show_progress_bar, model)]
+        vectors2 = [
+            *get_line_vectors(
+                lines_to_batch,
+                model_name,
+                embed_batch_size,
+                normalize_embeddings,
+                show_progress_bar,
+                model,
+            )
+        ]
 
     logging.debug(
-        f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}.")
+        f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}."
+    )
 
     # Similarity matrix
     logging.debug(f"Calculating similarity matrix.")
@@ -80,8 +140,18 @@ def process_batch(lines_from_batch,
 
     # save picture
     if save_pic:
-        vis_helper.save_pic(sim_matrix_best, lang_name_to,
-                            lang_name_from, img_path, batch_number, (x_min, x_max), (y_min, y_max), transparent=True, show_info=show_info, show_regression=show_regression)
+        vis_helper.save_pic(
+            sim_matrix_best,
+            lang_name_to,
+            lang_name_from,
+            img_path,
+            batch_number,
+            (x_min, x_max),
+            (y_min, y_max),
+            transparent=True,
+            show_info=show_info,
+            show_regression=show_regression,
+        )
 
     best_sim_ind = sim_matrix_best.argmax(1)
     texts_from = []
@@ -93,9 +163,8 @@ def process_batch(lines_from_batch,
         id_to = line_ids_to[best_sim_ind[line_from_id]]
         text_to = lines_to_batch[best_sim_ind[line_from_id]]
 
-        texts_from.append(
-            (f'[{id_from+1}]', id_from+1, text_from.strip()))
-        texts_to.append((f'[{id_to+1}]', id_to+1, text_to.strip()))
+        texts_from.append((f"[{id_from+1}]", id_from + 1, text_from.strip()))
+        texts_to.append((f"[{id_to+1}]", id_to + 1, text_to.strip()))
 
     return texts_from, texts_to
 
@@ -104,39 +173,60 @@ def process_batch(lines_from_batch,
     #     return [], []
 
 
-def align_texts(splitted_from,
-        splitted_to,
-        model_name,
-        batch_size,
-        window,
-        batch_ids=[],
-        save_pic=False,
-        lang_from="",
-        lang_to="",
-        img_path="",
-        embed_batch_size=10,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-        shift=0,
-        show_info=False,
-        show_regression=False,
-        proxy_from=[],
-        proxy_to=[],
-        use_proxy_from=False,
-        use_proxy_to=False):
+def align_texts(
+    splitted_from,
+    splitted_to,
+    model_name,
+    batch_size,
+    window,
+    batch_ids=[],
+    save_pic=False,
+    lang_from="",
+    lang_to="",
+    img_path="",
+    embed_batch_size=10,
+    normalize_embeddings=True,
+    show_progress_bar=False,
+    shift=0,
+    show_info=False,
+    show_regression=False,
+    proxy_from=[],
+    proxy_to=[],
+    use_proxy_from=False,
+    use_proxy_to=False,
+):
     result = []
-    task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
-                 for
-                    lines_from_batch,
-                    lines_to_batch,
-                    proxy_from_batch,
-                    proxy_to_batch,
-                    line_ids_from,
-                    line_ids_to,
-                    batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
+    task_list = [
+        (
+            lines_from_batch,
+            lines_to_batch,
+            proxy_from_batch,
+            proxy_to_batch,
+            line_ids_from,
+            line_ids_to,
+            batch_id,
+        )
+        for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
+            splitted_from,
+            splitted_to,
+            batch_size,
+            window,
+            batch_ids,
+            batch_shift=shift,
+            iter3=proxy_from,
+            iter4=proxy_to,
+        )
+    ]
 
-    for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
+    for (
+        lines_from_batch,
+        lines_to_batch,
+        proxy_from_batch,
+        proxy_to_batch,
+        line_ids_from,
+        line_ids_to,
+        batch_id,
+    ) in task_list:
         texts_from, texts_to = process_batch(
             lines_from_batch,
             lines_to_batch,
@@ -157,7 +247,8 @@ def align_texts(splitted_from,
             show_info=show_info,
             show_regression=show_regression,
             use_proxy_from=use_proxy_from,
-            use_proxy_to=use_proxy_to)
+            use_proxy_to=use_proxy_to,
+        )
         result.append((batch_id, texts_from, texts_to))
 
     # sort by batch_id (will be useful with parallel processing)
@@ -166,43 +257,64 @@ def align_texts(splitted_from,
     return result
 
 
-def align_db(db_path,
-        model_name,
-        batch_size,
-        window,
-        batch_ids=[],
-        save_pic=False,
-        lang_from="",
-        lang_to="",
-        img_path="",
-        embed_batch_size=10,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-        shift=0,
-        show_info=False,
-        show_regression=False,
-        model=None,
-        use_proxy_from=False,
-        use_proxy_to=False):
+def align_db(
+    db_path,
+    model_name,
+    batch_size,
+    window,
+    batch_ids=[],
+    save_pic=False,
+    lang_from="",
+    lang_to="",
+    img_path="",
+    embed_batch_size=10,
+    normalize_embeddings=True,
+    show_progress_bar=False,
+    shift=0,
+    show_info=False,
+    show_regression=False,
+    model=None,
+    use_proxy_from=False,
+    use_proxy_to=False,
+):
     result = []
     splitted_from = get_splitted_from(db_path)
     splitted_to = get_splitted_to(db_path)
     proxy_from = get_proxy_from(db_path)
     proxy_to = get_proxy_to(db_path)
 
-    task_list = [(lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id)
-                 for
-                    lines_from_batch,
-                    lines_to_batch,
-                    proxy_from_batch,
-                    proxy_to_batch,
-                    line_ids_from,
-                    line_ids_to,
-                    batch_id
-                 in get_batch_intersected(splitted_from, splitted_to, batch_size, window, batch_ids, batch_shift=shift, iter3=proxy_from, iter4=proxy_to)]
+    task_list = [
+        (
+            lines_from_batch,
+            lines_to_batch,
+            proxy_from_batch,
+            proxy_to_batch,
+            line_ids_from,
+            line_ids_to,
+            batch_id,
+        )
+        for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
+            splitted_from,
+            splitted_to,
+            batch_size,
+            window,
+            batch_ids,
+            batch_shift=shift,
+            iter3=proxy_from,
+            iter4=proxy_to,
+        )
+    ]
 
     count = 0
-    for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in task_list:
+    for (
+        lines_from_batch,
+        lines_to_batch,
+        proxy_from_batch,
+        proxy_to_batch,
+        line_ids_from,
+        line_ids_to,
+        batch_id,
+    ) in task_list:
         print("batch:", count)
         texts_from, texts_to = process_batch(
             lines_from_batch,
@@ -225,7 +337,8 @@ def align_db(db_path,
             show_regression=show_regression,
             model=model,
             use_proxy_from=use_proxy_from,
-            use_proxy_to=use_proxy_to)
+            use_proxy_to=use_proxy_to,
+        )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
 
@@ -240,19 +353,18 @@ def align_db(db_path,
 
 # HELPERS
 
+
 def get_splitted_from(db_path):
     """Get lines from splitted_from"""
     with sqlite3.connect(db_path) as db:
-        res = db.execute(
-            f'select f.text from splitted_from f order by f.id').fetchall()
+        res = db.execute(f"select f.text from splitted_from f order by f.id").fetchall()
     return [x[0] for x in res]
 
 
 def get_splitted_to(db_path):
     """Get lines from splitted_to"""
     with sqlite3.connect(db_path) as db:
-        res = db.execute(
-            f'select t.text from splitted_to t order by t.id').fetchall()
+        res = db.execute(f"select t.text from splitted_to t order by t.id").fetchall()
     return [x[0] for x in res]
 
 
@@ -260,7 +372,8 @@ def get_proxy_from(db_path):
     """Get lines from proxy_from"""
     with sqlite3.connect(db_path) as db:
         res = db.execute(
-            f'select f.proxy_text from splitted_from f order by f.id').fetchall()
+            f"select f.proxy_text from splitted_from f order by f.id"
+        ).fetchall()
     return [x[0] for x in res]
 
 
@@ -268,7 +381,8 @@ def get_proxy_to(db_path):
     """Get lines from proxy_to"""
     with sqlite3.connect(db_path) as db:
         res = db.execute(
-            f'select t.proxy_text from splitted_to t order by t.id').fetchall()
+            f"select t.proxy_text from splitted_to t order by t.id"
+        ).fetchall()
     return [x[0] for x in res]
 
 
@@ -280,44 +394,56 @@ def best_per_row_with_ones(sim_matrix):
     return sim_matrix_best
 
 
-def get_batch_intersected(iter1, iter2, n, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]):
+def get_batch_intersected(
+    iter1, iter2, n, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]
+):
     """Get batch with an additional window"""
     l1 = len(iter1)
     l2 = len(iter2)
-    k = int(round(n * l2/l1))
+    k = int(round(n * l2 / l1))
     kdx = 0 - k
 
     if not iter3:
-        iter3 = ['' for _ in range(l1)]
+        iter3 = ["" for _ in range(l1)]
     if not iter4:
-        iter4 = ['' for _ in range(l2)]
+        iter4 = ["" for _ in range(l2)]
 
-    if k < window*2:
+    if k < window * 2:
         # subbatches will be intersected
         logging.warning(
-            f"Batch for the second language is too small. k = {k}, window = {window}")
+            f"Batch for the second language is too small. k = {k}, window = {window}"
+        )
 
     counter = 0
     for ndx in range(0, l1, n):
         kdx += k
         if counter in batch_ids or len(batch_ids) == 0:
-            yield iter1[ndx:min(ndx + n, l1)], \
-                iter2[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
-                iter3[ndx:min(ndx + n, l1)], \
-                iter4[max(0, kdx - window + batch_shift):min(kdx + k + window + batch_shift, l2)], \
-                list(range(ndx, min(ndx + n, l1))), \
-                list(range(max(0, kdx - window + batch_shift), min(kdx + k + window + batch_shift, l2))), \
-                counter
+            yield iter1[ndx : min(ndx + n, l1)], iter2[
+                max(0, kdx - window + batch_shift) : min(
+                    kdx + k + window + batch_shift, l2
+                )
+            ], iter3[ndx : min(ndx + n, l1)], iter4[
+                max(0, kdx - window + batch_shift) : min(
+                    kdx + k + window + batch_shift, l2
+                )
+            ], list(
+                range(ndx, min(ndx + n, l1))
+            ), list(
+                range(
+                    max(0, kdx - window + batch_shift),
+                    min(kdx + k + window + batch_shift, l2),
+                )
+            ), counter
         counter += 1
 
 
 def get_sim_matrix(vec1, vec2, window):
     """Calculate similarity matrix"""
     sim_matrix = np.zeros((len(vec1), len(vec2)))
-    k = len(vec1)/len(vec2)
+    k = len(vec1) / len(vec2)
     for i, vector1 in enumerate(vec1):
         for j, vector2 in enumerate(vec2):
-            if (j*k > i-window) & (j*k < i+window):
+            if (j * k > i - window) & (j * k < i + window):
                 sim = 1 - spatial.distance.cosine(vector1, vector2)
                 sim_matrix[i, j] = max(sim, 0.01)
     return sim_matrix
@@ -340,14 +466,17 @@ def create_doc_index(db, data):
     doc_index = get_doc_index(db)
 
     if not doc_index:
-        doc_index = [[] for _ in range(max_batch_id+1)]
+        doc_index = [[] for _ in range(max_batch_id + 1)]
     else:
-        while len(doc_index) < max_batch_id+1:
+        while len(doc_index) < max_batch_id + 1:
             doc_index.append([])
 
     for batch_id in batch_ids:
         doc_index[batch_id] = []
-        for batch_id, a, b, c, d in db.execute('SELECT f.batch_id, f.id, f.text_ids, t.id, t.text_ids FROM processing_from f join processing_to t on f.id=t.id where f.batch_id = :batch_id order by f.id', {"batch_id": batch_id}):
+        for batch_id, a, b, c, d in db.execute(
+            "SELECT f.batch_id, f.id, f.text_ids, t.id, t.text_ids FROM processing_from f join processing_to t on f.id=t.id where f.batch_id = :batch_id order by f.id",
+            {"batch_id": batch_id},
+        ):
             doc_index[batch_id].append((a, b, c, d))
 
     update_doc_index(db, doc_index)
@@ -357,14 +486,16 @@ def update_doc_index(db, index):
     """Insert or update document index"""
     index = json.dumps(index)
     db.execute(
-        'insert or replace into doc_index (id, contents) values ((select id from doc_index limit 1),?)', (index,))
+        "insert or replace into doc_index (id, contents) values ((select id from doc_index limit 1),?)",
+        (index,),
+    )
 
 
 def get_doc_index(db):
     """Get document index"""
     res = []
     try:
-        cur = db.execute('SELECT contents FROM doc_index')
+        cur = db.execute("SELECT contents FROM doc_index")
         res = json.loads(cur.fetchone()[0])
     except:
         logging.warning("can not fetch index db")
@@ -374,16 +505,25 @@ def get_doc_index(db):
 def write_processing_batches(db, data):
     """Insert or rewrite batched data"""
     for batch_id, texts_from, texts_to, shift, window in data:
-        db.execute("delete from processing_from where batch_id=:batch_id", {
-            "batch_id": batch_id})
-        db.executemany(
-            "insert into processing_from(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_from])
-        db.execute("delete from processing_to where batch_id=:batch_id", {
-            "batch_id": batch_id})
-        db.executemany(
-            "insert into processing_to(batch_id, text_ids, initial_id, text) values (?,?,?,?)", [(batch_id, a, b, c) for a, b, c in texts_to])
         db.execute(
-            "insert or replace into batches (batch_id, insert_ts, shift, window) values (?, datetime('now'), ?, ?)", (batch_id, shift, window))
+            "delete from processing_from where batch_id=:batch_id",
+            {"batch_id": batch_id},
+        )
+        db.executemany(
+            "insert into processing_from(batch_id, text_ids, initial_id, text) values (?,?,?,?)",
+            [(batch_id, a, b, c) for a, b, c in texts_from],
+        )
+        db.execute(
+            "delete from processing_to where batch_id=:batch_id", {"batch_id": batch_id}
+        )
+        db.executemany(
+            "insert into processing_to(batch_id, text_ids, initial_id, text) values (?,?,?,?)",
+            [(batch_id, a, b, c) for a, b, c in texts_to],
+        )
+        db.execute(
+            "insert or replace into batches (batch_id, insert_ts, shift, window) values (?, datetime('now'), ?, ?)",
+            (batch_id, shift, window),
+        )
 
 
 def update_history(db_path, batch_ids, operation, parameters):
@@ -391,7 +531,9 @@ def update_history(db_path, batch_ids, operation, parameters):
     parameters = json.dumps(parameters)
     with sqlite3.connect(db_path) as db:
         db.executemany(
-            "insert into history(operation, batch_id, parameters, insert_ts) values (?,?,?, datetime('now'))", [(operation, batch_id, parameters) for batch_id in batch_ids])
+            "insert into history(operation, batch_id, parameters, insert_ts) values (?,?,?, datetime('now'))",
+            [(operation, batch_id, parameters) for batch_id in batch_ids],
+        )
 
 
 def init_document_db(db_path):
@@ -400,29 +542,41 @@ def init_document_db(db_path):
         os.remove(db_path)
     with sqlite3.connect(db_path) as db:
         db.execute(
-            'create table splitted_from(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)')
+            "create table splitted_from(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
+        )
         db.execute(
-            'create table splitted_to(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)')
+            "create table splitted_to(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
+        )
         db.execute(
-            'create table processing_from(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)')
+            "create table processing_from(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
+        )
         db.execute(
-            'create table processing_to(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)')
+            "create table processing_to(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
+        )
+        db.execute("create table doc_index(id integer primary key, contents varchar)")
         db.execute(
-            'create table doc_index(id integer primary key, contents varchar)')
+            "create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)"
+        )
         db.execute(
-            'create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)')
+            "create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)"
+        )
         db.execute(
-            'create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)')
-        db.execute(
-            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")')
-        db.execute(
-            'create table languages(id integer primary key, key text, val text)')
-        db.execute(
-            'create table version(id integer primary key, version text)')
-        db.execute('insert into version(version) values (?)', (con.DB_VERSION,))
+            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")'
+        )
+        db.execute("create table languages(id integer primary key, key text, val text)")
+        db.execute("create table version(id integer primary key, version text)")
+        db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
 
-def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted_to_path, proxy_from_path, proxy_to_path):
+def fill_db_from_files(
+    db_path,
+    lang_from,
+    lang_to,
+    splitted_from_path,
+    splitted_to_path,
+    proxy_from_path,
+    proxy_to_path,
+):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
@@ -439,11 +593,30 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted
         if len(lines) == len(lines_proxy):
             data = zip(lines, lines_proxy)
         else:
-            data = zip(lines, ['' for _ in range(len(lines))])
+            data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"from"))
+            db.executemany(
+                "insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        text[0].strip(),
+                        proxy.strip(),
+                        0,
+                        text[1][0],
+                        text[1][1],
+                        text[1][2],
+                        text[1][3],
+                        text[1][4],
+                        text[1][5],
+                        text[1][6],
+                    )
+                    for text, proxy in data
+                ],
+            )
+            db.executemany(
+                "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+                flatten_meta(meta, meta_par_ids, "from"),
+            )
     if os.path.isfile(splitted_to_path):
         with open(splitted_to_path, mode="r", encoding="utf-8") as input_path:
             lines = input_path.readlines()
@@ -455,16 +628,46 @@ def fill_db_from_files(db_path, lang_from, lang_to, splitted_from_path, splitted
         if len(lines) == len(lines_proxy):
             data = zip(lines, lines_proxy)
         else:
-            data = zip(lines, ['' for _ in range(len(lines))])
+            data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids,"to"))
+            db.executemany(
+                "insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        text[0].strip(),
+                        proxy.strip(),
+                        0,
+                        text[1][0],
+                        text[1][1],
+                        text[1][2],
+                        text[1][3],
+                        text[1][4],
+                        text[1][5],
+                        text[1][6],
+                    )
+                    for text, proxy in data
+                ],
+            )
+            db.executemany(
+                "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+                flatten_meta(meta, meta_par_ids, "to"),
+            )
     with sqlite3.connect(db_path) as db:
-        db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
+        db.executemany(
+            "insert into languages(key, val) values(?,?)",
+            [("from", lang_from), ("to", lang_to)],
+        )
 
 
-def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy_from=[], proxy_to=[]):
+def fill_db(
+    db_path,
+    lang_from,
+    lang_to,
+    splitted_from=[],
+    splitted_to=[],
+    proxy_from=[],
+    proxy_to=[],
+):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
@@ -474,23 +677,64 @@ def fill_db(db_path, lang_from, lang_to, splitted_from=[], splitted_to=[], proxy
         if len(splitted_from) == len(proxy_from):
             data = zip(splitted_from, proxy_from)
         else:
-            data = zip(splitted_from, ['' for _ in range(len(splitted_from))])
+            data = zip(splitted_from, ["" for _ in range(len(splitted_from))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "from"))
+            db.executemany(
+                "insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        text[0].strip(),
+                        proxy.strip(),
+                        0,
+                        text[1][0],
+                        text[1][1],
+                        text[1][2],
+                        text[1][3],
+                        text[1][4],
+                        text[1][5],
+                        text[1][6],
+                    )
+                    for text, proxy in data
+                ],
+            )
+            db.executemany(
+                "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+                flatten_meta(meta, meta_par_ids, "from"),
+            )
     if len(splitted_to) > 0:
         splitted_to, meta, meta_par_ids = handle_marks(splitted_to)
         if len(splitted_to) == len(proxy_to):
             data = zip(splitted_to, proxy_to)
         else:
-            data = zip(splitted_to, ['' for _ in range(len(splitted_to))])
+            data = zip(splitted_to, ["" for _ in range(len(splitted_to))])
         with sqlite3.connect(db_path) as db:
-            db.executemany("insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)", [
-                           (text[0].strip(), proxy.strip(), 0, text[1][0], text[1][1], text[1][2], text[1][3], text[1][4], text[1][5], text[1][6]) for text, proxy in data])
-            db.executemany("insert into meta(key, val, occurence, par_id) values(?,?,?,?)", flatten_meta(meta, meta_par_ids, "to"))
+            db.executemany(
+                "insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        text[0].strip(),
+                        proxy.strip(),
+                        0,
+                        text[1][0],
+                        text[1][1],
+                        text[1][2],
+                        text[1][3],
+                        text[1][4],
+                        text[1][5],
+                        text[1][6],
+                    )
+                    for text, proxy in data
+                ],
+            )
+            db.executemany(
+                "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+                flatten_meta(meta, meta_par_ids, "to"),
+            )
     with sqlite3.connect(db_path) as db:
-        db.executemany("insert into languages(key, val) values(?,?)", [("from", lang_from), ("to", lang_to)])
+        db.executemany(
+            "insert into languages(key, val) values(?,?)",
+            [("from", lang_from), ("to", lang_to)],
+        )
 
 
 def load_proxy(db_path, filepath, direction):
@@ -498,30 +742,38 @@ def load_proxy(db_path, filepath, direction):
     if os.path.isfile(filepath):
         with open(filepath, mode="r", encoding="utf-8") as input_path:
             lines_proxy = input_path.readlines()
-    ids = [x for x in range(1, len(lines_proxy)+1)]
+    ids = [x for x in range(1, len(lines_proxy) + 1)]
     with sqlite3.connect(db_path) as db:
         if direction == "from":
-            db.executemany("update splitted_from set proxy_text=(?) where id=(?)", [
-                            (proxy, id) for id, proxy in zip(ids, lines_proxy)])
+            db.executemany(
+                "update splitted_from set proxy_text=(?) where id=(?)",
+                [(proxy, id) for id, proxy in zip(ids, lines_proxy)],
+            )
         else:
-            db.executemany("update splitted_to set proxy_text=(?) where id=(?)", [
-                            (proxy, id) for id, proxy in zip(ids, lines_proxy)])
+            db.executemany(
+                "update splitted_to set proxy_text=(?) where id=(?)",
+                [(proxy, id) for id, proxy in zip(ids, lines_proxy)],
+            )
 
 
 def update_proxy_text(db_path, proxy_texts, ids, direction):
     """Update proxy text"""
     if not ids:
-        #try to write proxy_texts for all ids
-        ids = [x for x in range(1, len(proxy_texts)+1)]
+        # try to write proxy_texts for all ids
+        ids = [x for x in range(1, len(proxy_texts) + 1)]
     if len(ids) != len(proxy_texts):
         print("proxy_text and ids lengths are not equal. Provide correct ids.")
         return
     with sqlite3.connect(db_path) as db:
         for id, text in zip(ids, proxy_texts):
             if direction == "from":
-                db.execute("update splitted_from set proxy_text=(?) where id=(?)", (text, id))
+                db.execute(
+                    "update splitted_from set proxy_text=(?) where id=(?)", (text, id)
+                )
             else:
-                db.execute("update splitted_to set proxy_text=(?) where id=(?)", (text, id))
+                db.execute(
+                    "update splitted_to set proxy_text=(?) where id=(?)", (text, id)
+                )
 
 
 def update_proxy_text_from(db_path, proxy_texts, ids=[]):
@@ -534,30 +786,31 @@ def update_proxy_text_to(db_path, proxy_texts, ids=[]):
     update_proxy_text(db_path, proxy_texts, ids, direction="to")
 
 
-
 def handle_marks(lines):
     """Handle markup. Write counters."""
     res = []
     marks_counter = defaultdict(int)
     meta = defaultdict(list)
     meta_par_ids = defaultdict(list)
-    marks = (0,0,0,0,0,0)
-    p_ending = tuple([preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS])
+    marks = (0, 0, 0, 0, 0, 0)
+    p_ending = tuple(
+        [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
+    )
 
     for line in lines:
         next_par = False
         line = line.strip()
 
         if line.endswith(p_ending):
-            #remove last occurence of PARAGRAPH_MARK
-            line = ''.join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
+            # remove last occurence of PARAGRAPH_MARK
+            line = "".join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
             next_par = True
-        
+
         for mark in preprocessor.MARK_COUNTERS:
             update_mark_counter(marks_counter, line, mark)
 
         update_meta(meta, line, meta_par_ids, marks_counter[preprocessor.PARAGRAPH])
-                
+
         if not line.endswith(get_all_extraction_endings()):
             marks = (
                 marks_counter[preprocessor.PARAGRAPH],
@@ -566,10 +819,12 @@ def handle_marks(lines):
                 marks_counter[preprocessor.H3],
                 marks_counter[preprocessor.H4],
                 marks_counter[preprocessor.H5],
-                marks_counter[preprocessor.DIVIDER])
+                marks_counter[preprocessor.DIVIDER],
+            )
             res.append((line, marks))
-            
-            if next_par: marks_counter[preprocessor.PARAGRAPH] += 1
+
+            if next_par:
+                marks_counter[preprocessor.PARAGRAPH] += 1
         else:
             marks_counter[preprocessor.PARAGRAPH] += 1
 
@@ -583,19 +838,19 @@ def update_mark_counter(marks_counter, line, mark):
 
 
 def get_mark_value(line, mark):
-    res = ''
+    res = ""
     ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
-    if line.endswith(ending):        
+    if line.endswith(ending):
         if mark == preprocessor.DIVIDER:
-            return '* * *'
-        res = line[:len(line)-len(ending)]
+            return "* * *"
+        res = line[: len(line) - len(ending)]
     return res
 
 
 def get_all_extraction_endings():
     return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META])
 
-    
+
 def update_meta(meta, line, meta_par_ids, par_id):
     for mark in preprocessor.MARK_META:
         val = get_mark_value(line, mark)
@@ -610,4 +865,3 @@ def flatten_meta(meta, meta_par_ids, direction):
         for i, (val, par_id) in enumerate(zip(meta[key], meta_par_ids[key])):
             res.append((f"{key}_{direction}", val, i, par_id))
     return res
-
