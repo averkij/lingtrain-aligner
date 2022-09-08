@@ -15,8 +15,9 @@ def prepare_index(db_path, batch_id=-1):
     """Get totally flattened index ids"""
     res = []
     if batch_id >= 0:
-        index = helper.get_doc_index_original(db_path)[batch_id]
-        for i, ix in enumerate(index):
+        index_orig = helper.get_doc_index_original(db_path)
+        total_batches = len(index_orig)
+        for i, ix in enumerate(index_orig[batch_id]):
             from_ids = json.loads(ix[1])
             to_ids = json.loads(ix[3])
             for t_id in to_ids:
@@ -32,6 +33,7 @@ def prepare_index(db_path, batch_id=-1):
                 )
     else:
         index = helper.get_flatten_doc_index_with_batch_id(db_path)
+        total_batches = 1
         for ix, sub_id, batch_id in index:
             from_ids = json.loads(ix[1])
             to_ids = json.loads(ix[3])
@@ -46,10 +48,10 @@ def prepare_index(db_path, batch_id=-1):
                         "to_was_edited": len(to_ids) > 1,
                     }
                 )
-    return res
+    return res, total_batches
 
 
-def get_good_chains(res, min_len=2, handle_start=False):
+def get_good_chains(res, min_len=2, handle_start=False, handle_finish=False):
     """Calculate valid alignment chains"""
     curr_from = res[0]["from"][0]
     curr_to = res[0]["to"]
@@ -278,12 +280,40 @@ def get_statistics(conflicts, print_stat=True):
     return statistics
 
 
-def get_all_conflicts(db_path, min_chain_length=3, max_conflicts_len=6, batch_id=-1):
+def get_all_conflicts(
+    db_path,
+    min_chain_length=3,
+    max_conflicts_len=6,
+    batch_id=-1,
+    handle_start=False,
+    handle_finish=False,
+):
     """Get conflicts to solve and other"""
-    prepared_index = prepare_index(db_path, batch_id)
+    prepared_index, total_batches = prepare_index(db_path, batch_id)
     if not prepared_index:
         return [], []
-    chains_from, chains_to = get_good_chains(prepared_index, min_len=min_chain_length)
+
+    if total_batches != 1:
+        if batch_id > 0:
+            handle_start = False
+        if batch_id < total_batches - 1:
+            handle_finish = False
+
+    print(
+        "get_all_conflicts, handle_start:",
+        handle_start,
+        "handle_finish:",
+        handle_finish,
+        "batch_id",
+        batch_id,
+    )
+
+    chains_from, chains_to = get_good_chains(
+        prepared_index,
+        min_len=min_chain_length,
+        handle_start=handle_start,
+        handle_finish=handle_finish,
+    )
     conflicts_to_solve, conflicts_rest = get_conflicts(
         chains_from, chains_to, max_len=max_conflicts_len
     )
@@ -323,8 +353,7 @@ def fix_start(
     use_proxy_to=False,
 ):
     """Find the first conflict and resolve"""
-    print("Handling start conflict if needed.")
-    prepared_index = prepare_index(db_path, 0)
+    prepared_index, _ = prepare_index(db_path, 0)
     chains_from, chains_to = get_good_chains(
         prepared_index, min_len=2, handle_start=True
     )
