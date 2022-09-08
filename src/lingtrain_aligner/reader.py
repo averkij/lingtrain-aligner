@@ -936,7 +936,7 @@ def prepare_meta(meta, direction):
 
 def get_meta(meta, mark, occurence=0):
     """Get prepared meta value"""
-    if len(meta[mark]) > occurence:
+    if mark in meta and len(meta[mark]) > occurence:
         return meta[mark][occurence][0]
     return ""
 

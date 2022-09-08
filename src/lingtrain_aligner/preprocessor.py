@@ -35,7 +35,19 @@ MARK_META = [
 ]
 
 MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
-MARKS_FOR_ADDING = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
+MARKS_FOR_ADDING = [
+    H1,
+    H2,
+    H3,
+    H4,
+    H5,
+    DIVIDER,
+    QUOTE_TEXT,
+    QUOTE_NAME,
+    IMAGE,
+    AUTHOR,
+    TITLE,
+]
 
 PARAGRAPH_MARK = "%%%%%"
 LINE_ENDINGS = [".", "!", "?", ";", ":", "。", "？", "！", '"', "'"]  # ”
