@@ -51,41 +51,76 @@ def prepare_index(db_path, batch_id=-1):
     return res, total_batches
 
 
-def get_good_chains(res, min_len=2, handle_start=False, handle_finish=False):
+def get_good_chains(
+    res, min_len=2, handle_start=False, handle_finish=False, len_from=-1, len_to=-1
+):
     """Calculate valid alignment chains"""
+
     curr_from = res[0]["from"][0]
     curr_to = res[0]["to"]
+
     chains_from = []
     chains_to = []
-    chain_to = [(curr_to, res[0]["batch_id"], res[0]["sub_id"])]
+
     chain_from = [(curr_from, res[0]["batch_id"], res[0]["sub_id"])]
-    for i in range(1, len(res)):
+    chain_to = [(curr_to, res[0]["batch_id"], res[0]["sub_id"])]
+
+    start = 1
+
+    if handle_start and curr_to != 1:
+        chains_from.append(chain_from)
+        chains_to.append([(1, res[0]["batch_id"], res[0]["sub_id"])])
+        chain_from = [(res[1]["from"][0], res[1]["batch_id"], res[1]["sub_id"])]
+        chain_to = [(res[1]["to"], res[1]["batch_id"], res[1]["sub_id"])]
+        curr_from = res[1]["from"][0]
+        curr_to = res[1]["to"]
+        start = 2
+
+    for i in range(start, len(res)):
         val_from = res[i]["from"][0]
         val_to = res[i]["to"]
+
+        # continue chain
         if val_to == curr_to + 1:
-            chain_to.append((val_to, res[i]["batch_id"], res[i]["sub_id"]))
             chain_from.append((val_from, res[i]["batch_id"], res[i]["sub_id"]))
-            curr_to = val_to
+            chain_to.append((val_to, res[i]["batch_id"], res[i]["sub_id"]))
             curr_from = val_from
-        elif len(chain_to) >= min_len or handle_start:
-            chains_to.append(chain_to)
+            curr_to = val_to
+
+        # add chain and start new
+        elif len(chain_to) >= min_len:
             chains_from.append(chain_from)
-            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
+            chains_to.append(chain_to)
             chain_from = [(val_from, res[i]["batch_id"], res[i]["sub_id"])]
-            curr_to = val_to
+            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
             curr_from = val_from
-            handle_start = False
+            curr_to = val_to
+
+        # start new chain
         else:
-
-            # print(">>:", chain_to)
-
-            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
             chain_from = [(val_from, res[i]["batch_id"], res[i]["sub_id"])]
-            curr_to = val_to
+            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
             curr_from = val_from
+            curr_to = val_to
+
     if len(chain_to) >= min_len:
-        chains_to.append(chain_to)
         chains_from.append(chain_from)
+        chains_to.append(chain_to)
+    elif handle_finish:
+        chains_from.append([(len_from, res[-1]["batch_id"], res[-1]["sub_id"])])
+        chains_to.append([(len_to, res[-1]["batch_id"], res[-1]["sub_id"])])
+
+    # print("handle_finish", handle_finish)
+    # print("chains_from", chains_from)
+    # print("chains_to", chains_to)
+    # print("chain_from", chain_from)
+    # print("chain_to", chain_to)
+
+    # print("curr_from", curr_from)
+    # print("curr_to", curr_to)
+
+    # print("len_from", len_from)
+    # print("len_to", len_to)
 
     return chains_from, chains_to
 
@@ -289,6 +324,8 @@ def get_all_conflicts(
     handle_finish=False,
 ):
     """Get conflicts to solve and other"""
+    splitted_from_len = len(aligner.get_splitted_from(db_path))
+    splitted_to_len = len(aligner.get_splitted_to(db_path))
     prepared_index, total_batches = prepare_index(db_path, batch_id)
     if not prepared_index:
         return [], []
@@ -313,6 +350,8 @@ def get_all_conflicts(
         min_len=min_chain_length,
         handle_start=handle_start,
         handle_finish=handle_finish,
+        len_from=splitted_from_len,
+        len_to=splitted_to_len,
     )
     conflicts_to_solve, conflicts_rest = get_conflicts(
         chains_from, chains_to, max_len=max_conflicts_len
@@ -353,9 +392,15 @@ def fix_start(
     use_proxy_to=False,
 ):
     """Find the first conflict and resolve"""
-    prepared_index, _ = prepare_index(db_path, 0)
+    splitted_from_len = len(aligner.get_splitted_from(db_path))
+    splitted_to_len = len(aligner.get_splitted_to(db_path))
+    prepared_index, total_batches = prepare_index(db_path, 0)
     chains_from, chains_to = get_good_chains(
-        prepared_index, min_len=2, handle_start=True
+        prepared_index,
+        min_len=2,
+        handle_start=True,
+        len_from=splitted_from_len,
+        len_to=splitted_to_len,
     )
     conflicts_to_solve, _ = get_conflicts(
         chains_from, chains_to, max_len=max_conflicts_len
