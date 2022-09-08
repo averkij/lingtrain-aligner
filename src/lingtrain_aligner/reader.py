@@ -44,7 +44,7 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     page = list(zip(index, range(len(index))))
 
     data, _, __ = helper.get_doc_items(page, db_path)
-    lang_from, lang_to = helper.get_lang_codes(db_path)
+    lang_from, lang_to = ["from", "to"]
 
     # extract paragraph info
     from_ids, to_ids = set(), set()
@@ -68,8 +68,6 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     meta_dict[lang_from] = prepare_meta(meta, "from")
     meta_dict[lang_to] = prepare_meta(meta, "to")
 
-    main_lang_code = lang_from if direction == "from" else lang_to
-
     gen_main = get_next_paragraph(
         index, data, paragraphs_from_dict, paragraphs_to_dict, direction
     )
@@ -91,7 +89,7 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     paragraphs_dict[lang_from] = paragraphs_from
     paragraphs_dict[lang_to] = paragraphs_to
 
-    meta_info = {"items": meta_dict, "main_lang_code": main_lang_code}
+    meta_info = {"items": meta_dict, "main_lang_code": direction}
 
     return paragraphs_dict, par_ids, meta_info, sent_counter_dict
 
@@ -774,7 +772,6 @@ def create_polybook_preview(
     highlight="through",
 ):
     """Generate multiligual html preview"""
-    # ensure path is existed
     langs_count = len(lang_ordered)
 
     if template in STYLES:

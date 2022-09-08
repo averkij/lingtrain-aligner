@@ -53,10 +53,10 @@ def save_tmx(db_path, output_path, lang_from, lang_to):
         doc_out.write(TMX_END)
 
 
-def save_plain_text(db_path, output_path, direction, batch_ids=[]):
+def save_plain_text(db_path, output_path, side, batch_ids=[]):
     """Save text document in TXT format"""
     doc_from, doc_to = helper.read_processing(db_path, batch_ids)
-    to_save = doc_from if direction == "from" else doc_to
+    to_save = doc_from if side == "from" else doc_to
     with open(output_path, mode="w", encoding="utf-8") as doc_out:
         text = "\n".join(to_save)
         doc_out.write(text)
