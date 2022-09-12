@@ -348,9 +348,21 @@ def export_xml4pdf(db_path, lang_ordered, direction="to"):
             mark_item = write_next(next_mark, metas, lang_ordered)
             next_mark, next_meta_par_id = reader.get_next_meta_par_id(metas)
 
-            if mark_item[0][0] == preprocessor.H2:
+            if mark_item[0][0] in [
+                preprocessor.H1,
+                preprocessor.H2,
+                preprocessor.H3,
+                preprocessor.H4,
+                preprocessor.H5,
+            ]:
                 # add previous section and start new
-                if curr_section["p"]:
+                if curr_section["p"] or curr_section["@type"] in [
+                    preprocessor.H1,
+                    preprocessor.H2,
+                    preprocessor.H3,
+                    preprocessor.H4,
+                    preprocessor.H5,
+                ]:
                     root["body"]["section"].append(curr_section)
 
                 curr_section = {
