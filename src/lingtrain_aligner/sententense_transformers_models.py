@@ -3,10 +3,14 @@ import pickle
 
 from lingtrain_aligner.helper import lazy_property
 from sentence_transformers import SentenceTransformer
-from torch import device
 import torch
 
 from transformers import AutoTokenizer, AutoModel
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 
 
 # torch.backends.quantized.engine = 'qnnpack'
@@ -21,10 +25,12 @@ class SentenceTransformersModel:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_MODEL_PATH):
-            print("Loading saved distiluse-base-multilingual-cased-v2 model.")
+            print(
+                f"Loading saved distiluse-base-multilingual-cased-v2 model. Device: {device}"
+            )
             # self.model = torch.quantization.quantize_dynamic(pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, 'rb')), {torch.nn.Linear}, dtype=torch.qint8)
             _model = pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, "rb"))
-            _model._target_device = device("cpu")  # patch
+            _model._target_device = device  # patch
         else:
             print("Loading distiluse-base-multilingual-cased-v2 model from Internet.")
             _model = SentenceTransformer("distiluse-base-multilingual-cased-v2")
@@ -44,10 +50,12 @@ class SentenceTransformersModelXlm100:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH):
-            print("Loading saved xlm-r-100langs-bert-base-nli-mean-tokens model.")
+            print(
+                f"Loading saved xlm-r-100langs-bert-base-nli-mean-tokens model. Device: {device}"
+            )
             # self.model = torch.quantization.quantize_dynamic(pickle.load(open(SENTENCE_TRANSFORMERS_MODEL_PATH, 'rb')), {torch.nn.Linear}, dtype=torch.qint8)
             _model = pickle.load(open(SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH, "rb"))
-            _model._target_device = device("cpu")  # patch
+            _model._target_device = device  # patch
         else:
             print(
                 "Loading xlm-r-100langs-bert-base-nli-mean-tokens model from Internet."
@@ -69,9 +77,9 @@ class SentenceTransformersModelLaBSE:
     @lazy_property
     def model(self):
         if os.path.isfile(SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH):
-            print("Loading saved LaBSE model.")
+            print(f"Loading saved LaBSE model. Device: {device}")
             _model = pickle.load(open(SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH, "rb"))
-            _model._target_device = device("cpu")  # patch
+            _model._target_device = device  # patch
         else:
             print("Loading LaBSE model from Internet.")
             _model = SentenceTransformer("LaBSE")
