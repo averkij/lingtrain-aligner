@@ -564,6 +564,9 @@ def init_document_db(db_path):
             'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")'
         )
         db.execute("create table languages(id integer primary key, key text, val text)")
+        db.execute(
+            "create table files(id integer primary key, direction text, name text, guid text)"
+        )
         db.execute("create table version(id integer primary key, version text)")
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
@@ -576,6 +579,10 @@ def fill_db_from_files(
     splitted_to_path,
     proxy_from_path,
     proxy_to_path,
+    file_from,
+    id_from,
+    file_to,
+    id_to,
 ):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
@@ -657,6 +664,10 @@ def fill_db_from_files(
             "insert into languages(key, val) values(?,?)",
             [("from", lang_from), ("to", lang_to)],
         )
+        db.executemany(
+            "insert into files(direction, name, guid) values(?,?,?)",
+            [("from", file_from, id_from), ("to", file_to, id_to)],
+        )
 
 
 def fill_db(
@@ -667,6 +678,10 @@ def fill_db(
     splitted_to=[],
     proxy_from=[],
     proxy_to=[],
+    file_from="",
+    id_from="",
+    file_to="",
+    id_to="",
 ):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
@@ -734,6 +749,10 @@ def fill_db(
         db.executemany(
             "insert into languages(key, val) values(?,?)",
             [("from", lang_from), ("to", lang_to)],
+        )
+        db.executemany(
+            "insert into files(direction, name, guid) values(?,?,?)",
+            [("from", file_from, id_from), ("to", file_to, id_to)],
         )
 
 
