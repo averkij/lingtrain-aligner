@@ -8,6 +8,7 @@ import razdel
 from lingtrain_aligner import preprocessor
 
 RU_CODE = "ru"
+BE_CODE = "bu"
 ZH_CODE = "zh"
 DE_CODE = "de"
 EN_CODE = "en"
@@ -26,11 +27,11 @@ NL_CODE = "nl"
 SW_CODE = "sw"
 UK_CODE = "uk"
 CV_CODE = "cv"
-
 XX_CODE = "xx"
 
 LANGUAGES = {
     RU_CODE: {"name": "Russian"},
+    BE_CODE: {"name": "Belarusian"},
     ZH_CODE: {"name": "Chinese"},
     DE_CODE: {"name": "German"},
     EN_CODE: {"name": "English"},
