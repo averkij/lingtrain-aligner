@@ -156,7 +156,7 @@ def get_substrings(line, sep, endings, res):
             res.append(line + sep)
 
 
-def split_by_sentences_wrapper(lines, langcode):
+def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     """Special wrapper with an additional paragraph splitting"""
     res, acc = [], []
     marks = preprocessor.get_all_meta_marks()
@@ -165,7 +165,7 @@ def split_by_sentences_wrapper(lines, langcode):
             # print("found mark", line)
             if acc:
                 sentences = ensure_paragraph_splitting(
-                    split_by_sentences(acc, langcode)
+                    split_by_sentences(acc, langcode, clean_text)
                 )
                 res.extend(sentences)
                 acc = []
@@ -173,59 +173,59 @@ def split_by_sentences_wrapper(lines, langcode):
         else:
             acc.append(line)
     if acc:
-        sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode))
+        sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode, clean_text))
         res.extend(sentences)
     return res
 
 
-def split_by_sentences(lines, langcode):
+def split_by_sentences(lines, langcode, clean_text=True):
     """Split line by sentences using language specific rules"""
     line = " ".join(lines)
-    if langcode == RU_CODE:
-        sentences = preprocess(
-            line, [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING], split_by_razdel
-        )
-        return sentences
-    if langcode == DE_CODE:
-        sentences = preprocess(
-            line,
-            [
-                (german_quotes, '"'),
-                (german_dates, rf"\1\2{german_foo}\3\4"),
-                *DEFAULT_PREPROCESSING,
-            ],
-            split_by_razdel,
-        )
-        sentences = preprocess_raw(sentences, [(german_bdates, r"\1\2.\3\4")])
-        return sentences
-    if langcode == ZH_CODE:
-        sentences = preprocess(
-            line,
-            [
-                # (pat_comma, '。'),
-                (pattern_zh, "")
-            ],
-            split_zh,
-        )
-        return sentences
-    if langcode == JP_CODE:
-        sentences = preprocess(line, [(pat_comma, "。"), (pattern_jp, "")], split_jp)
-        return sentences
-    if langcode == FR_CODE:
-        sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
-        sentences = after_fr(sentences)
-        return sentences
 
-    # apply default splitting
-    sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
+    if not clean_text:
+        # apply only default splitting
+        sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
+    else:
+        if langcode == RU_CODE:
+            sentences = preprocess(
+                line, [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING], split_by_razdel
+            )
+        elif langcode == DE_CODE:
+            sentences = preprocess(
+                line,
+                [
+                    (german_quotes, '"'),
+                    (german_dates, rf"\1\2{german_foo}\3\4"),
+                    *DEFAULT_PREPROCESSING,
+                ],
+                split_by_razdel,
+            )
+            sentences = preprocess_raw(sentences, [(german_bdates, r"\1\2.\3\4")])
+        elif langcode == ZH_CODE:
+            sentences = preprocess(
+                line,
+                [
+                    # (pat_comma, '。'),
+                    (pattern_zh, "")
+                ],
+                split_zh,
+            )
+        elif langcode == JP_CODE:
+            sentences = preprocess(line, [(pat_comma, "。"), (pattern_jp, "")], split_jp)
+        elif langcode == FR_CODE:
+            sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
+            sentences = after_fr(sentences)
+        else:
+            # apply only default splitting
+            sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
 
     if sentences[-1].strip() == "":
-        return sentences[:-1]
+        sentences = sentences[:-1]
 
     return sentences
 
 
-def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=False):
+def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=False, clean_text=True):
     """Split raw text file by sentences and save"""
     with open(raw_path, mode="r", encoding="utf-8") as input_file, open(
         splitted_path, mode="w", encoding="utf-8"
@@ -235,9 +235,9 @@ def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=
             lines = preprocess_raw(lines, [(quotes, '"')])
             if handle_marks:
                 lines = preprocessor.mark_paragraphs(lines)
-                sentences = split_by_sentences_wrapper(lines, langcode)
+                sentences = split_by_sentences_wrapper(lines, langcode, clean_text)
             else:
-                sentences = split_by_sentences(lines, langcode)
+                sentences = split_by_sentences(lines, langcode, clean_text)
         else:
             raise Exception("Unknown language code.")
 
