@@ -4,7 +4,6 @@
 import re
 
 import razdel
-
 from lingtrain_aligner import preprocessor
 
 RU_CODE = "ru"
@@ -52,6 +51,7 @@ LANGUAGES = {
     CV_CODE: {"name": "Chuvash"},
     XX_CODE: {"name": "Unknown"},
 }
+
 
 # pattern_ru_orig = re.compile(r'[a-zA-Z\(\)\[\]\/\<\>•\'\n]+')
 pattern_ru_orig = re.compile(r"[\/\<\>•\'\n]+")
@@ -118,6 +118,11 @@ def after_fr(lines):
     return lines
 
 
+def after_de(lines):
+    """Some wierd German stuff"""
+    return preprocess_raw(lines, [(german_bdates, r"\1\2.\3\4")])
+
+
 def preprocess_raw(lines, re_list):
     """Preprocess raw file lines"""
     for i in range(len(lines)):
@@ -126,11 +131,12 @@ def preprocess_raw(lines, re_list):
     return lines
 
 
-def preprocess(line, re_list, splitter):
+def preprocess(line, re_list, splitter, after_fn):
     """Preprocess general line"""
     for pat, val in re_list:
         line = re.sub(pat, val, line)
-    return splitter(line)
+    splitted = splitter(line)
+    return after_fn(splitted)
 
 
 def ensure_paragraph_splitting(lines):
@@ -178,46 +184,35 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     return res
 
 
+splitter_fn = {
+    JP_CODE: split_jp,
+    ZH_CODE: split_zh
+}
+
+preprocessing_rules = {
+    RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
+    DE_CODE: [(german_quotes, '"'), (german_dates, rf"\1\2{german_foo}\3\4"), *DEFAULT_PREPROCESSING,],
+    ZH_CODE: [(pattern_zh, "")],
+    JP_CODE: [(pat_comma, "。"), (pattern_jp, "")],
+}
+
+postprocessing_rules = {
+    FR_CODE: after_fr,
+    DE_CODE: after_de
+}
+
 def split_by_sentences(lines, langcode, clean_text=True):
     """Split line by sentences using language specific rules"""
     line = " ".join(lines)
+    split_fn = splitter_fn.get(langcode, split_by_razdel)
+    after_fn = postprocessing_rules.get(langcode, lambda x: x)
 
-    if not clean_text:
-        # apply only default splitting
-        sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
-    else:
-        if langcode == RU_CODE:
-            sentences = preprocess(
-                line, [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING], split_by_razdel
-            )
-        elif langcode == DE_CODE:
-            sentences = preprocess(
-                line,
-                [
-                    (german_quotes, '"'),
-                    (german_dates, rf"\1\2{german_foo}\3\4"),
-                    *DEFAULT_PREPROCESSING,
-                ],
-                split_by_razdel,
-            )
-            sentences = preprocess_raw(sentences, [(german_bdates, r"\1\2.\3\4")])
-        elif langcode == ZH_CODE:
-            sentences = preprocess(
-                line,
-                [
-                    # (pat_comma, '。'),
-                    (pattern_zh, "")
-                ],
-                split_zh,
-            )
-        elif langcode == JP_CODE:
-            sentences = preprocess(line, [(pat_comma, "。"), (pattern_jp, "")], split_jp)
-        elif langcode == FR_CODE:
-            sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
-            sentences = after_fr(sentences)
-        else:
-            # apply only default splitting
-            sentences = preprocess(line, [*DEFAULT_PREPROCESSING], split_by_razdel)
+    if clean_text:
+        pre_rules = preprocessing_rules.get(langcode, [*DEFAULT_PREPROCESSING])
+    else:        
+        pre_rules = [*DEFAULT_PREPROCESSING]
+
+    sentences = preprocess(line, pre_rules, split_fn, after_fn)
 
     if sentences[-1].strip() == "":
         sentences = sentences[:-1]
