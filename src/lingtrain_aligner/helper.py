@@ -474,6 +474,18 @@ def get_lang_codes(db_path):
     return lang_from[0], lang_to[0]
 
 
+def get_files_info(db_path):
+    """Get files information"""
+    with sqlite3.connect(db_path) as db:
+        info_from = db.execute(
+            f'select f.name, f.guid from files f where f.direction="from"'
+        ).fetchone()
+        info_to = db.execute(
+            f'select f.name, f.guid from files f where f.direction="to"'
+        ).fetchone()
+    return info_from[0], info_to[0], info_from[1], info_to[1]
+
+
 def get_processing_from(db_path):
     """Get lines from processing_from"""
     with sqlite3.connect(db_path) as db:
@@ -502,6 +514,38 @@ def get_batch_info(db_path, batch_id):
     return None, None
 
 
+def get_batches_info(db_path):
+    """Get batches info"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            "select b.batch_id, b.insert_ts, b.shift, b.window from batches b"
+        ).fetchall()
+    return res
+
+
+def get_version(db_path):
+    """Get alignment database version"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(f"select v.version from version v").fetchone()
+    return res[0]
+
+
+def set_name(db_path, name):
+    """Update alignment name"""
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "insert or replace into info (key, val) values ('name',?)",
+            (name,),
+        )
+
+
+def get_name(db_path):
+    """Get alignment name"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(f"select i.val from info i where i.key='name'").fetchone()
+    return res[0]
+
+
 def get_unique_variants(variants_ids):
     """Get unique variants"""
     res = set()
@@ -518,7 +562,7 @@ def get_string(dic, ids):
 
 
 def lazy_property(func):
-    """"Lazy initialization attribute"""
+    """Lazy initialization attribute"""
     attr_name = "_lazy_" + func.__name__
 
     @property
