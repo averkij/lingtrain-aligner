@@ -14,6 +14,7 @@ from lingtrain_aligner import (
     vis_helper,
     preprocessor,
     constants as con,
+    helper,
 )
 from scipy import spatial
 
@@ -567,6 +568,7 @@ def init_document_db(db_path):
         db.execute(
             "create table files(id integer primary key, direction text, name text, guid text)"
         )
+        db.execute("create table info(id integer primary key, key text, val text)")
         db.execute("create table version(id integer primary key, version text)")
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
@@ -583,6 +585,7 @@ def fill_db_from_files(
     id_from,
     file_to,
     id_to,
+    name="",
 ):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
@@ -668,6 +671,7 @@ def fill_db_from_files(
             "insert into files(direction, name, guid) values(?,?,?)",
             [("from", file_from, id_from), ("to", file_to, id_to)],
         )
+    helper.set_name(db_path, name)
 
 
 def fill_db(
@@ -682,6 +686,7 @@ def fill_db(
     id_from="",
     file_to="",
     id_to="",
+    name="",
 ):
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
@@ -754,6 +759,7 @@ def fill_db(
             "insert into files(direction, name, guid) values(?,?,?)",
             [("from", file_from, id_from), ("to", file_to, id_to)],
         )
+    helper.set_name(db_path, name)
 
 
 def load_proxy(db_path, filepath, direction):
