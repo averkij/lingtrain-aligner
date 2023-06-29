@@ -112,6 +112,14 @@ def get_processing_to_by_id(db_path, start_id, end_id):
     return res
 
 
+def get_splitted_lenght(db_path):
+    """Get splitted_from and splitted_to lenghts"""
+    with sqlite3.connect(db_path) as db:
+        len_from = db.execute(f"select count(*) from splitted_from").fetchone()[0]
+        len_to = db.execute(f"select count(*) from splitted_to").fetchone()[0]
+    return len_from, len_to
+
+
 def get_splitted_from_by_id(db_path, ids):
     """Get lines from splitted_from by ids"""
     res = []
