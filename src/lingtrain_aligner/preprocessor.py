@@ -18,6 +18,7 @@ TRANSLATOR = "translator"
 QUOTE_TEXT = "qtext"
 QUOTE_NAME = "qname"
 IMAGE = "image"
+SEGMENT = "segment"
 
 MARK_META = [
     H1,
