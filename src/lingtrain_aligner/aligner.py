@@ -277,34 +277,58 @@ def align_db(
     model=None,
     use_proxy_from=False,
     use_proxy_to=False,
+    use_segments=False,
+    segmentation_marks=[preprocessor.H2],
 ):
     result = []
-    splitted_from = get_splitted_from(db_path)
-    splitted_to = get_splitted_to(db_path)
-    proxy_from = get_proxy_from(db_path)
-    proxy_to = get_proxy_to(db_path)
-
-    task_list = [
-        (
-            lines_from_batch,
-            lines_to_batch,
-            proxy_from_batch,
-            proxy_to_batch,
-            line_ids_from,
-            line_ids_to,
-            batch_id,
-        )
-        for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
-            splitted_from,
-            splitted_to,
-            batch_size,
-            window,
-            batch_ids,
-            batch_shift=shift,
-            iter3=proxy_from,
-            iter4=proxy_to,
-        )
-    ]
+    if use_segments:
+        left_segments, right_segments = calculate_segments(db_path, segmentation_marks)
+        task_list = [
+            (
+                lines_from_batch,
+                lines_to_batch,
+                proxy_from_batch,
+                proxy_to_batch,
+                line_ids_from,
+                line_ids_to,
+                batch_id,
+            )
+            for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected_for_segments(
+                db_path=db_path,
+                left_segments=left_segments,
+                right_segments=right_segments,
+                batch_size=batch_size,
+                window=window,
+                batch_ids=batch_ids,
+                batch_shift=shift,
+            )
+        ]
+    else:
+        splitted_from = get_splitted_from(db_path)
+        splitted_to = get_splitted_to(db_path)
+        proxy_from = get_proxy_from(db_path)
+        proxy_to = get_proxy_to(db_path)
+        task_list = [
+            (
+                lines_from_batch,
+                lines_to_batch,
+                proxy_from_batch,
+                proxy_to_batch,
+                line_ids_from,
+                line_ids_to,
+                batch_id,
+            )
+            for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
+                splitted_from,
+                splitted_to,
+                batch_size,
+                window,
+                batch_ids,
+                batch_shift=shift,
+                iter3=proxy_from,
+                iter4=proxy_to,
+            )
+        ]
 
     count = 0
     for (
@@ -316,7 +340,7 @@ def align_db(
         line_ids_to,
         batch_id,
     ) in task_list:
-        print("batch:", count)
+        print(f"batch: {count} ({batch_id})")
         texts_from, texts_to = process_batch(
             lines_from_batch,
             lines_to_batch,
@@ -352,7 +376,7 @@ def align_db(
     save_db(db_path, result)
 
 
-# HELPERS
+# CONTENT HELPERS
 
 
 def get_splitted_from(db_path):
@@ -367,6 +391,30 @@ def get_splitted_to(db_path):
     with sqlite3.connect(db_path) as db:
         res = db.execute(f"select t.text from splitted_to t order by t.id").fetchall()
     return [x[0] for x in res]
+
+
+def get_splitted_from_by_par_with_line_id(db_path, par_id_start, par_id_end):
+    """Get lines from splitted_from by paragraphs"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"""select f.id, f.text from splitted_from f
+                                where paragraph > ? and paragraph < ?
+                                order by f.id""",
+            (par_id_start, par_id_end),
+        ).fetchall()
+    return [(x[0], x[1]) for x in res]
+
+
+def get_splitted_to_by_par_with_line_id(db_path, par_id_start, par_id_end):
+    """Get lines from splitted_from by paragraphs"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"""select f.id, f.text from splitted_to f
+                                where paragraph > ? and paragraph < ?
+                                order by f.id""",
+            (par_id_start, par_id_end),
+        ).fetchall()
+    return [(x[0], x[1]) for x in res]
 
 
 def get_proxy_from(db_path):
@@ -387,6 +435,30 @@ def get_proxy_to(db_path):
     return [x[0] for x in res]
 
 
+def get_proxy_from_by_par_with_line_id(db_path, par_id_start, par_id_end):
+    """Get proxy lines from splitted_from by paragraphs"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"""select f.id, f.proxy_text from splitted_from f
+                                where paragraph > ? and paragraph < ?
+                                order by f.id""",
+            (par_id_start, par_id_end),
+        ).fetchall()
+    return [(x[0], x[1]) for x in res]
+
+
+def get_proxy_to_by_par_with_line_id(db_path, par_id_start, par_id_end):
+    """Get proxy lines from splitted_from by paragraphs"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"""select f.id, f.proxy_text from splitted_to f
+                                where paragraph > ? and paragraph < ?
+                                order by f.id""",
+            (par_id_start, par_id_end),
+        ).fetchall()
+    return [(x[0], x[1]) for x in res]
+
+
 def best_per_row_with_ones(sim_matrix):
     """Transfor matrix by leaving only best match"""
     sim_matrix_best = np.zeros_like(sim_matrix)
@@ -396,11 +468,22 @@ def best_per_row_with_ones(sim_matrix):
 
 
 def get_batch_intersected(
-    iter1, iter2, n, window, batch_ids=[], batch_shift=0, iter3=[], iter4=[]
+    iter1,
+    iter2,
+    n,
+    window,
+    batch_ids=[],
+    batch_shift=0,
+    iter3=[],
+    iter4=[],
+    start_batch_id=0,
+    batch_start_line_id_from=0,
+    batch_start_line_id_to=0,
 ):
     """Get batch with an additional window"""
     l1 = len(iter1)
     l2 = len(iter2)
+
     k = int(round(n * l2 / l1))
     kdx = 0 - k
 
@@ -415,7 +498,7 @@ def get_batch_intersected(
             f"Batch for the second language is too small. k = {k}, window = {window}"
         )
 
-    counter = 0
+    counter = start_batch_id
     for ndx in range(0, l1, n):
         kdx += k
         if counter in batch_ids or len(batch_ids) == 0:
@@ -428,14 +511,160 @@ def get_batch_intersected(
                     kdx + k + window + batch_shift, l2
                 )
             ], list(
-                range(ndx, min(ndx + n, l1))
+                range(
+                    ndx + batch_start_line_id_from,
+                    min(
+                        ndx + batch_start_line_id_from + n,
+                        batch_start_line_id_from + l1,
+                    ),
+                )
             ), list(
                 range(
-                    max(0, kdx - window + batch_shift),
-                    min(kdx + k + window + batch_shift, l2),
+                    max(
+                        batch_start_line_id_to,
+                        batch_start_line_id_to + kdx - window + batch_shift,
+                    ),
+                    min(
+                        batch_start_line_id_to + kdx + k + window + batch_shift,
+                        batch_start_line_id_to + l2,
+                    ),
                 )
             ), counter
         counter += 1
+
+
+def get_batch_intersected_for_segments(
+    db_path,
+    left_segments,
+    right_segments,
+    batch_size,
+    window,
+    batch_ids=[],
+    batch_shift=0,
+):
+    """Get batches based on segments structure."""
+    start_batch_id = 0
+
+    for left, right in zip(left_segments, right_segments):
+        iter1 = get_splitted_from_by_par_with_line_id(db_path, left[0], left[1])
+        iter2 = get_splitted_to_by_par_with_line_id(db_path, right[0], right[1])
+        iter3 = get_proxy_from_by_par_with_line_id(db_path, left[0], left[1])
+        iter4 = get_proxy_to_by_par_with_line_id(db_path, right[0], right[1])
+
+        if not iter1:
+            print("Empty segment occured. Probably no text between segment delimeters")
+            continue
+
+        for (
+            lines_from_batch,
+            lines_to_batch,
+            proxy_from_batch,
+            proxy_to_batch,
+            line_ids_from,
+            line_ids_to,
+            batch_id,
+        ) in get_batch_intersected(
+            [x[1] for x in iter1],
+            [x[1] for x in iter2],
+            batch_size,
+            window,
+            batch_ids=[],  # we need to return all batches to estimate needed [batch_ids]
+            batch_shift=batch_shift,
+            iter3=[x[1] for x in iter3],
+            iter4=[x[1] for x in iter4],
+            start_batch_id=start_batch_id,
+            batch_start_line_id_from=iter1[0][0],
+            batch_start_line_id_to=iter2[0][0],
+        ):
+            if batch_id in batch_ids:
+                yield lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id
+
+            start_batch_id += 1
+
+
+def calculate_segments(db_path, segmentation_marks=[preprocessor.H2]):
+    """Calculate segments based on metadata"""
+    left_nails, right_nails = [], []
+    meta = helper.get_meta_dict(db_path)
+    for mark in meta:
+        if mark.split("_")[0] in segmentation_marks:
+            # print(mark)
+            for segment_mark in meta[mark]:
+                if mark.split("_")[-1] == "from":
+                    # print(segment_mark)
+                    left_nails.append(segment_mark[2])  # line_id
+                else:
+                    right_nails.append(segment_mark[2])  # line_id
+
+    # remove duplicates
+    left_nails = sorted(list(set(left_nails)))
+    right_nails = sorted(list(set(right_nails)))
+
+    assert len(left_nails) == len(
+        right_nails
+    ), f"Error. Different amount of segmentation marks in your texts ({', '.join(segmentation_marks)})"
+
+    left_nails.sort()
+    right_nails.sort()
+
+    left_segments, right_segments = [], []
+    left_len, right_len = helper.get_splitted_lenght(db_path)
+
+    for i in range(1, len(left_nails)):
+        left_segments.append((left_nails[i - 1], left_nails[i]))
+        right_segments.append((right_nails[i - 1], right_nails[i]))
+
+    # insert last or the only segment
+    if len(left_nails) == 0:
+        left_segments.append((0, left_len))
+        right_segments.append((0, right_len))
+    else:
+        left_segments.append((left_nails[-1], left_len))
+        right_segments.append((right_nails[-1], right_len))
+
+    return left_segments, right_segments
+
+
+def get_batch_intersected_for_segments_list(
+    db_path, left_segments, right_segments, batch_size
+):
+    """Get batche structure based on segments."""
+    res = []
+    start_batch_id = 0
+
+    for left, right in zip(left_segments, right_segments):
+        segment_batches = []
+        iter1 = get_splitted_from_by_par_with_line_id(db_path, left[0], left[1])
+        iter2 = get_splitted_to_by_par_with_line_id(db_path, right[0], right[1])
+
+        if not iter1:
+            print("Empty segment occured. Probably no text between segment delimeters")
+            continue
+
+        for (
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            batch_id,
+        ) in get_batch_intersected(
+            [x[1] for x in iter1],
+            [x[1] for x in iter2],
+            batch_size,
+            window=0,
+            batch_ids=[],  # we need to return all batches to estimate needed [batch_ids]
+            start_batch_id=start_batch_id,
+            batch_start_line_id_from=iter1[0][0],
+            batch_start_line_id_to=iter2[0][0],
+        ):
+            segment_batches.append(batch_id)
+            start_batch_id += 1
+
+        res.append(segment_batches)
+
+    return res
 
 
 def get_sim_matrix(vec1, vec2, window):
