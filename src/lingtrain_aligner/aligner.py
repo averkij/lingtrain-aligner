@@ -282,6 +282,8 @@ def align_db(
 ):
     result = []
     if use_segments:
+        print("Aligning using segments.")
+
         left_segments, right_segments = calculate_segments(db_path, segmentation_marks)
         task_list = [
             (
@@ -304,6 +306,8 @@ def align_db(
             )
         ]
     else:
+        print("Aligning without segments.")
+
         splitted_from = get_splitted_from(db_path)
         splitted_to = get_splitted_to(db_path)
         proxy_from = get_proxy_from(db_path)
@@ -329,6 +333,8 @@ def align_db(
                 iter4=proxy_to,
             )
         ]
+
+    print("tasks amount:", len(task_list))
 
     count = 0
     for (
