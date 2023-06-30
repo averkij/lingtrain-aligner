@@ -1,5 +1,5 @@
 from collections import defaultdict
-from lingtrain_aligner import helper, preprocessor
+from lingtrain_aligner import helper, preprocessor, resolver, aligner
 import json
 import pathlib
 import copy
@@ -22,6 +22,35 @@ MARKS = [
     preprocessor.QUOTE_NAME,
     preprocessor.IMAGE,
 ]
+
+
+def get_aligned_pair_chains(db_path, min_len=2):
+    """Get aligned pairs. Can be used on uncomplete alignment to extract pairs."""
+    res = []
+    seen = set()
+
+    prepared_index, _ = resolver.prepare_index(db_path)
+    chains_from, chains_to = resolver.get_good_chains(prepared_index, min_len=min_len)
+    doc_index = helper.get_doc_index_original(db_path)
+    splitted_from = aligner.get_splitted_from(db_path)
+    splitted_to = aligner.get_splitted_to(db_path)
+
+    for chain_from, chain_to in zip(chains_from, chains_to):
+        for x, y in zip(chain_from, chain_to):
+            item = (x[1], x[2])
+            if item in seen:
+                continue
+            doc_item = doc_index[x[1]][x[2]]
+
+            text_from = " ".join(
+                [splitted_from[x - 1] for x in json.loads(doc_item[1])]
+            )
+            text_to = " ".join([splitted_to[x - 1] for x in json.loads(doc_item[3])])
+
+            res.append([text_from, text_to])
+            seen.add(item)
+
+    return res
 
 
 def is_empty_cells(db_path):
@@ -371,7 +400,6 @@ def merge_sentences_mapping(sent_mapping_dict, par_ids):
                     and sent_mapping_dict[target_lang_code][lang][curr_par_id][0]
                     <= par_id
                 ):
-
                     if (
                         sent_mapping_dict[target_lang_code][lang][curr_par_id][0]
                         < par_id
@@ -620,7 +648,6 @@ def create_book(
 
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-
                 res_html.write(
                     f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
                 )
@@ -737,7 +764,6 @@ def create_polybook(
 
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
-
                 res_html.write(f"<div class='par dt-cell'>  ")
 
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
