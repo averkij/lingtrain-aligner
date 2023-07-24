@@ -404,7 +404,7 @@ def get_splitted_from_by_par_with_line_id(db_path, par_id_start, par_id_end):
     with sqlite3.connect(db_path) as db:
         res = db.execute(
             f"""select f.id, f.text from splitted_from f
-                                where paragraph > ? and paragraph < ?
+                                where paragraph > ? and paragraph <= ?
                                 order by f.id""",
             (par_id_start, par_id_end),
         ).fetchall()
