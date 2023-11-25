@@ -598,9 +598,9 @@ def calculate_segments(db_path, segmentation_marks=[preprocessor.H2]):
             for segment_mark in meta[mark]:
                 if mark.split("_")[-1] == "from":
                     # print(segment_mark)
-                    left_nails.append(segment_mark[2])  # line_id
+                    left_nails.append(segment_mark[2])  # par_id
                 else:
-                    right_nails.append(segment_mark[2])  # line_id
+                    right_nails.append(segment_mark[2])  # par_id
 
     # remove duplicates
     left_nails = sorted(list(set(left_nails)))
