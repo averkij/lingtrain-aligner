@@ -9,15 +9,18 @@ import more_itertools as mit
 from lingtrain_aligner import aligner, helper
 from scipy import spatial
 from tqdm import tqdm
+import logging
+import copy
 
 
-def prepare_index(db_path, batch_id=-1):
+def prepare_index(db_path, batch_id=-1, index=None):
     """Get totally flattened index ids"""
     res = []
     if batch_id >= 0:
-        index_orig = helper.get_doc_index_original(db_path)
-        total_batches = len(index_orig)
-        for i, ix in enumerate(index_orig[batch_id]):
+        if not index:
+            index = helper.get_doc_index_original(db_path)
+        total_batches = len(index)
+        for i, ix in enumerate(index[batch_id]):
             from_ids = json.loads(ix[1])
             to_ids = json.loads(ix[3])
             for t_id in to_ids:
@@ -32,7 +35,7 @@ def prepare_index(db_path, batch_id=-1):
                     }
                 )
     else:
-        index = helper.get_flatten_doc_index_with_batch_id(db_path)
+        index = helper.get_flatten_doc_index_with_batch_id(db_path, index=index)
         total_batches = 1
         for ix, sub_id, batch_id in index:
             from_ids = json.loads(ix[1])
@@ -322,11 +325,12 @@ def get_all_conflicts(
     batch_id=-1,
     handle_start=False,
     handle_finish=False,
+    index=None,
 ):
     """Get conflicts to solve and other"""
     splitted_from_len = len(aligner.get_splitted_from(db_path))
     splitted_to_len = len(aligner.get_splitted_to(db_path))
-    prepared_index, total_batches = prepare_index(db_path, batch_id)
+    prepared_index, total_batches = prepare_index(db_path, batch_id, index=index)
     if not prepared_index:
         return [], []
 
@@ -357,6 +361,28 @@ def get_all_conflicts(
         chains_from, chains_to, max_len=max_conflicts_len
     )
     return conflicts_to_solve, conflicts_rest
+
+
+def calculate_conflicts_amount_by_index(
+    db_path,
+    index,
+    batch_id=-1,
+    min_chain_length=2,
+    max_conflicts_len=26,
+    handle_start=False,
+    handle_finish=False,
+):
+    """Calculate unused conflicts amount using index only"""
+    _, rest = get_all_conflicts(
+        db_path,
+        min_chain_length,
+        max_conflicts_len,
+        batch_id,
+        handle_start,
+        handle_finish,
+        index,
+    )
+    return len(rest)
 
 
 def resolve_all_conflicts(
@@ -414,6 +440,102 @@ def fix_start(
         use_proxy_from,
         use_proxy_to,
     )
+
+
+def correct_conflicts(
+    db_path,
+    conflicts,
+    batch_id=-1,
+    min_chain_length=2,
+    max_conflicts_len=26,
+    handle_start=False,
+    handle_finish=False,
+):
+    """Handle case with negative conflict's length"""
+
+    logging.info(
+        "Trying to decrease a number of unused conflicts. Fixing negative lenghts."
+    )
+
+    negative_conflicts_from, negative_conflicts_to = [], []
+    for c in conflicts:
+        len_from = c["from"]["end"][0] - c["from"]["start"][0] + 1
+        len_to = c["to"]["end"][0] - c["to"]["start"][0] + 1
+        if len_from < 0:
+            negative_conflicts_from.append(c)
+        if len_to < 0:
+            negative_conflicts_to.append(c)
+
+    logging.info(f"Found {len(negative_conflicts_to)} conflicts with negative length.")
+
+    with sqlite3.connect(db_path) as db:
+        index = aligner.get_doc_index(db)
+
+    curr_conf_len = calculate_conflicts_amount_by_index(
+        db_path,
+        index,
+        batch_id,
+        min_chain_length,
+        max_conflicts_len,
+        handle_start,
+        handle_finish,
+    )
+
+    fixed_conflicts = 0
+    for n_conf in negative_conflicts_to:
+        start, end = get_conflict_coordinates(n_conf)
+
+        index_copy = try_fix_conflict_ending(index, start)
+        conf_len = calculate_conflicts_amount_by_index(
+            db_path,
+            index_copy,
+            batch_id,
+            min_chain_length,
+            max_conflicts_len,
+            handle_start,
+            handle_finish,
+        )
+        if conf_len != curr_conf_len:
+            index = index_copy
+            curr_conf_len = conf_len
+            fixed_conflicts += 1
+            continue
+
+        index_copy = try_fix_conflict_ending(index, end)
+        conf_len = calculate_conflicts_amount_by_index(
+            db_path,
+            index_copy,
+            batch_id,
+            min_chain_length,
+            max_conflicts_len,
+            handle_start,
+            handle_finish,
+        )
+        if conf_len != curr_conf_len:
+            index = index_copy
+            fixed_conflicts += 1
+
+    logging.info(f"{fixed_conflicts} was fixed.")
+    if fixed_conflicts > 0:
+        logging.info("Updating index.")
+        with sqlite3.connect(db_path) as db:
+            aligner.update_doc_index(db, index)
+
+    return
+
+
+def try_fix_conflict_ending(index, ending_coordinate):
+    index_copy = copy.deepcopy(index)
+    conf_start = index_copy[ending_coordinate[0]][ending_coordinate[1]]
+    conf_start_to = json.loads(conf_start[3])  # [159, '[160]', 159, '[243]']
+    candidate = json.dumps([conf_start_to[0] + 1] + conf_start_to[1:])
+
+    print("conf_start_to, candidate", conf_start_to, candidate)
+    conf_start[3] = candidate
+
+    index_copy[ending_coordinate[0]][ending_coordinate[1]] = conf_start
+
+    return index_copy
 
 
 def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=None):

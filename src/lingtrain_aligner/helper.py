@@ -32,14 +32,15 @@ def get_flatten_doc_index(db_path, batch_ids=[]):
     return res
 
 
-def get_flatten_doc_index_with_batch_id(db_path):
+def get_flatten_doc_index_with_batch_id(db_path, index=None):
     """Get document index"""
     res = []
     try:
         with sqlite3.connect(db_path) as db:
             cur = db.execute("SELECT contents FROM doc_index")
-            data = json.loads(cur.fetchone()[0])
-        for batch_id, sub_index in enumerate(data):
+            if not index:
+                index = json.loads(cur.fetchone()[0])
+        for batch_id, sub_index in enumerate(index):
             res.extend(
                 list(zip(sub_index, range(len(sub_index)), [batch_id] * len(sub_index)))
             )
