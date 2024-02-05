@@ -1,6 +1,5 @@
 """Conflicts resolver part of the engine"""
 
-
 import json
 import sqlite3
 from collections import defaultdict
@@ -340,14 +339,14 @@ def get_all_conflicts(
         if batch_id < total_batches - 1:
             handle_finish = False
 
-    print(
-        "get_all_conflicts, handle_start:",
-        handle_start,
-        "handle_finish:",
-        handle_finish,
-        "batch_id",
-        batch_id,
-    )
+    # print(
+    #     "get_all_conflicts, handle_start:",
+    #     handle_start,
+    #     "handle_finish:",
+    #     handle_finish,
+    #     "batch_id",
+    #     batch_id,
+    # )
 
     chains_from, chains_to = get_good_chains(
         prepared_index,
@@ -521,7 +520,7 @@ def correct_conflicts(
         with sqlite3.connect(db_path) as db:
             aligner.update_doc_index(db, index)
 
-    return
+    return fixed_conflicts
 
 
 def try_fix_conflict_ending(index, ending_coordinate):
