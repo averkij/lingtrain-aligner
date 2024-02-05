@@ -42,10 +42,11 @@ def get_aligned_pair_chains(db_path, min_len=2):
                 continue
             doc_item = doc_index[x[1]][x[2]]
 
-            text_from = " ".join(
-                [splitted_from[x - 1] for x in json.loads(doc_item[1])]
-            )
-            text_to = " ".join([splitted_to[x - 1] for x in json.loads(doc_item[3])])
+            ix_from = json.loads(doc_item[1])
+            ix_to = json.loads(doc_item[3])
+            if not max(ix_to) > len(splitted_to) and not max(ix_to) > len(splitted_to):
+                text_from = " ".join([splitted_from[x - 1] for x in ix_from])
+                text_to = " ".join([splitted_to[x - 1] for x in ix_to])
 
             res.append([text_from, text_to])
             seen.add(item)
