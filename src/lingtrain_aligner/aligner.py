@@ -1,12 +1,12 @@
 """Texts aligner part of the engine"""
 
-
 import json
 import logging
 import os
 import re
 import sqlite3
 from collections import defaultdict
+from sentence_transformers import SentenceTransformer
 
 import numpy as np
 from lingtrain_aligner import (
@@ -32,6 +32,11 @@ def get_line_vectors(
     model=None,
 ):
     """Calculate embedding of the string"""
+    if model_name not in model_dispatcher.models:
+        logging.info(f"Model name is provided. model_name={model_name}.")
+        logging.info(f"Trying to load as a SentenceTransformers model.")
+        model = SentenceTransformer(model_name, cache_folder="./models_cache")
+
     if model:
         return model.encode(
             lines,
