@@ -33,7 +33,9 @@ class SentenceTransformersModel:
             _model._target_device = device  # patch
         else:
             print("Loading distiluse-base-multilingual-cased-v2 model from Internet.")
-            _model = SentenceTransformer("distiluse-base-multilingual-cased-v2")
+            _model = SentenceTransformer(
+                "distiluse-base-multilingual-cased-v2", cache_folder="./models_cache"
+            )
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
@@ -60,7 +62,10 @@ class SentenceTransformersModelXlm100:
             print(
                 "Loading xlm-r-100langs-bert-base-nli-mean-tokens model from Internet."
             )
-            _model = SentenceTransformer("xlm-r-100langs-bert-base-nli-mean-tokens")
+            _model = SentenceTransformer(
+                "xlm-r-100langs-bert-base-nli-mean-tokens",
+                cache_folder="./models_cache",
+            )
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
@@ -82,7 +87,7 @@ class SentenceTransformersModelLaBSE:
             _model._target_device = device  # patch
         else:
             print("Loading LaBSE model from Internet.")
-            _model = SentenceTransformer("LaBSE")
+            _model = SentenceTransformer("LaBSE", cache_folder="./models_cache")
         return _model
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
@@ -105,13 +110,17 @@ class RuBertTinyModel:
             )
         else:
             print("Loading rubert tiny model from Internet.")
-            _model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
+            _model = AutoModel.from_pretrained(
+                "cointegrated/rubert-tiny2", cache_dir="./models_cache"
+            )
         return _model
 
     @lazy_property
     def tokenizer(self):
         print("Loading rubert tiny tokenizer from Internet.")
-        _tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
+        _tokenizer = AutoTokenizer.from_pretrained(
+            "cointegrated/rubert-tiny2", cache_dir="./models_cache"
+        )
         return _tokenizer
 
     def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
