@@ -22,6 +22,8 @@ to_delete = re.compile(
     r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+'
 )
 
+custom_model_name, custom_model = "", None
+
 
 def get_line_vectors(
     lines,
@@ -32,10 +34,16 @@ def get_line_vectors(
     model=None,
 ):
     """Calculate embedding of the string"""
+    global custom_model_name, custom_model
     if model_name not in model_dispatcher.models:
-        logging.info(f"Model name is provided. model_name={model_name}.")
-        logging.info(f"Trying to load as a SentenceTransformers model.")
-        model = SentenceTransformer(model_name, cache_folder="./models_cache")
+        if custom_model_name != model_name:
+            logging.info(f"Model name is provided. model_name={model_name}.")
+            logging.info(f"Trying to load as a SentenceTransformers model.")
+            custom_model = SentenceTransformer(
+                model_name, cache_folder="./models_cache"
+            )
+            custom_model_name = model_name
+        model = custom_model
 
     if model:
         return model.encode(
