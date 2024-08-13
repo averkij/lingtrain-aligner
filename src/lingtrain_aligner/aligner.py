@@ -819,9 +819,10 @@ def fill_db_from_files(
             data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
+                        i + 1,
                         text[0].strip(),
                         proxy.strip(),
                         0,
@@ -833,7 +834,7 @@ def fill_db_from_files(
                         text[1][5],
                         text[1][6],
                     )
-                    for text, proxy in data
+                    for i, (text, proxy) in enumerate(data)
                 ],
             )
             db.executemany(
@@ -854,9 +855,10 @@ def fill_db_from_files(
             data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
+                        i + 1,
                         text[0].strip(),
                         proxy.strip(),
                         0,
@@ -868,7 +870,7 @@ def fill_db_from_files(
                         text[1][5],
                         text[1][6],
                     )
-                    for text, proxy in data
+                    for i, (text, proxy) in enumerate(data)
                 ],
             )
             db.executemany(
@@ -913,9 +915,10 @@ def fill_db(
             data = zip(splitted_from, ["" for _ in range(len(splitted_from))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_from(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
+                        i + 1,
                         text[0].strip(),
                         proxy.strip(),
                         0,
@@ -927,7 +930,7 @@ def fill_db(
                         text[1][5],
                         text[1][6],
                     )
-                    for text, proxy in data
+                    for i, (text, proxy) in enumerate(data)
                 ],
             )
             db.executemany(
@@ -942,9 +945,10 @@ def fill_db(
             data = zip(splitted_to, ["" for _ in range(len(splitted_to))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_to(text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
+                        i + 1,
                         text[0].strip(),
                         proxy.strip(),
                         0,
@@ -956,7 +960,7 @@ def fill_db(
                         text[1][5],
                         text[1][6],
                     )
-                    for text, proxy in data
+                    for i, (text, proxy) in enumerate(data)
                 ],
             )
             db.executemany(

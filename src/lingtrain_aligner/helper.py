@@ -3,6 +3,7 @@ import logging
 import sqlite3
 from collections import defaultdict
 import os
+from lingtrain_aligner import constants as con
 
 
 def create_table_splitted(db, direction):
@@ -687,7 +688,7 @@ def get_processing_to_text_ids_non_empty(db_path):
     """Get text_ids from processing_to"""
     with sqlite3.connect(db_path) as db:
         res = db.execute(
-            f"select f.id, t.text_ids from processing_to f.text_ids<>'[]' t order by t.id"
+            f"select t.id, t.text_ids from processing_to t where t.text_ids<>'[]' order by t.id"
         ).fetchall()
     return [x for x in res]
 
