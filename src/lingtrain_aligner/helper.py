@@ -2,6 +2,51 @@ import json
 import logging
 import sqlite3
 from collections import defaultdict
+import os
+
+
+def create_table_splitted(db, direction):
+    """Create tables for splitted lines. Created separately because PK is not needed anymore."""
+    if direction == "from":
+        db.execute(
+            "create table splitted_from(id integer, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
+        )
+    else:
+        db.execute(
+            "create table splitted_to(id integer, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
+        )
+
+
+def init_document_db(db_path):
+    """Init document database (alignment) with tables structure"""
+    if os.path.isfile(db_path):
+        os.remove(db_path)
+    with sqlite3.connect(db_path) as db:
+        create_table_splitted(db, "from")
+        create_table_splitted(db, "to")
+        db.execute(
+            "create table processing_from(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
+        )
+        db.execute(
+            "create table processing_to(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
+        )
+        db.execute("create table doc_index(id integer primary key, contents varchar)")
+        db.execute(
+            "create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)"
+        )
+        db.execute(
+            "create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)"
+        )
+        db.execute(
+            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")'
+        )
+        db.execute("create table languages(id integer primary key, key text, val text)")
+        db.execute(
+            "create table files(id integer primary key, direction text, name text, guid text)"
+        )
+        db.execute("create table info(id integer primary key, key text, val text)")
+        db.execute("create table version(id integer primary key, version text)")
+        db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
 
 def get_doc_index_original(db_path):
@@ -239,6 +284,124 @@ def get_splitted_to(db_path, ids=[]):
             ):
                 res[id] = text_to
     return res
+
+
+def check_table_pk(db, table_name):
+    cursor = db.execute(f"PRAGMA table_info({table_name});")
+    table_info = cursor.fetchall()
+
+    for column in table_info:
+        name = column[1]
+        pk = column[5]
+        if name == "id":
+            return True if pk == 1 else False
+
+    return False
+
+
+def rename_table(db, old_name, new_name):
+    """Rename table"""
+    db.execute(f"ALTER TABLE `{old_name}` RENAME TO `{new_name}`")
+
+
+def ensure_splitted_pk_is_not_exists(db_path, direction):
+    """Drop PK in splitted table if exists"""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+
+    with sqlite3.connect(db_path) as db:
+        pk_exists = check_table_pk(db, table_name)
+        if pk_exists:
+            print("PK exists, dropiing...", table_name)
+            old_table_name = f"old_{table_name}"
+            # rename original_table
+            rename_table(db, table_name, old_table_name)
+            # # create table without PK
+            create_table_splitted(db, direction)
+            # # copy data
+            db.execute(
+                f"insert into {table_name} select * from {old_table_name}",
+            )
+            # # drop old table
+            db.execute(f"drop table {old_table_name}")
+
+
+def update_splitted_text(db_path, direction, line_id, val):
+    """Update line value in splitted table"""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+    with sqlite3.connect(db_path) as db:
+        db.execute(f"update {table_name} set text=? where id=?", (val, line_id))
+
+
+def update_processing_text(db_path, direction, line_id, val):
+    """Update line value in splitted table"""
+    if direction == "from":
+        table_name = "processing_from"
+    else:
+        table_name = "processing_to"
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            f"update {table_name} set text=? where text_ids=?", (val, f"[{line_id}]")
+        )
+
+
+def insert_new_splitted_line(db_path, direction, line_id):
+    """Insert line after splitting operation."""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+
+    print("line_id", line_id, direction, table_name)
+
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            f"update {table_name} set id=id+1 where id>?",
+            (line_id,),
+        )
+        db.execute(
+            f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider)
+                select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider from {table_name} where id=?""",
+            (line_id,),
+        )
+
+
+def update_processing_mapping(db_path, direction, line_id):
+    """Update lines mapping in processing table"""
+    if direction == "from":
+        table_name = "processing_from"
+        processing_data = get_processing_from_text_ids_non_empty(db_path)
+    else:
+        table_name = "processing_to"
+        processing_data = get_processing_to_text_ids_non_empty(db_path)
+
+    mapping = {}
+    for id, text_ids_json in processing_data:
+        text_ids = json.loads(text_ids_json)
+        if any(x > line_id for x in text_ids):
+            new_values = [x if x <= line_id else x + 1 for x in text_ids]
+            mapping[id] = json.dumps(new_values)
+
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "create temporary table temp_mapping (id integer, new_text_ids text)"
+        )
+        db.executemany(
+            "insert into temp_mapping (id, new_text_ids) values (?, ?);",
+            mapping.items(),
+        )
+        db.execute(
+            f"""update {table_name}
+            set text_ids = (select new_text_ids from temp_mapping where temp_mapping.id = {table_name}.id)
+            where id IN (select id from temp_mapping)
+        """
+        )
+        db.execute("drop table temp_mapping")
 
 
 def get_doc_page(db_path, text_ids):
@@ -511,6 +674,24 @@ def get_processing_to(db_path):
     return [x[0] for x in res]
 
 
+def get_processing_from_text_ids_non_empty(db_path):
+    """Get text_ids from processing_from"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"select f.id, f.text_ids from processing_from f where f.text_ids<>'[]' order by f.id"
+        ).fetchall()
+    return [x for x in res]
+
+
+def get_processing_to_text_ids_non_empty(db_path):
+    """Get text_ids from processing_to"""
+    with sqlite3.connect(db_path) as db:
+        res = db.execute(
+            f"select f.id, t.text_ids from processing_to f.text_ids<>'[]' t order by t.id"
+        ).fetchall()
+    return [x for x in res]
+
+
 def get_batch_info(db_path, batch_id):
     """Get batch alignment parameters"""
     with sqlite3.connect(db_path) as db:
@@ -536,7 +717,7 @@ def get_version(db_path):
     """Get alignment database version"""
     with sqlite3.connect(db_path) as db:
         res = db.execute(f"select v.version from version v").fetchone()
-    return res[0]
+    return float(res[0])
 
 
 def set_name(db_path, name):

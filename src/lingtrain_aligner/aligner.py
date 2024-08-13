@@ -35,7 +35,7 @@ def get_line_vectors(
 ):
     """Calculate embedding of the string"""
     global custom_model_name, custom_model
-    if model_name not in model_dispatcher.models:
+    if model_name not in model_dispatcher.models and not model:
         if custom_model_name != model_name:
             logging.info(f"Model name is provided. model_name={model_name}.")
             logging.info(f"Trying to load as a SentenceTransformers model.")
@@ -702,6 +702,7 @@ def get_sim_matrix(vec1, vec2, window):
 
 
 def save_db(db_path, data):
+    """Save data to a SQLite database."""
     with sqlite3.connect(db_path) as db:
         write_processing_batches(db, data)
         create_doc_index(db, data)
@@ -785,42 +786,6 @@ def update_history(db_path, batch_ids, operation, parameters):
         )
 
 
-def init_document_db(db_path):
-    """Init document database (alignment) with tables structure"""
-    if os.path.isfile(db_path):
-        os.remove(db_path)
-    with sqlite3.connect(db_path) as db:
-        db.execute(
-            "create table splitted_from(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
-        )
-        db.execute(
-            "create table splitted_to(id integer primary key, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
-        )
-        db.execute(
-            "create table processing_from(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
-        )
-        db.execute(
-            "create table processing_to(id integer primary key, batch_id integer, text_ids varchar, initial_id integer, text nvarchar)"
-        )
-        db.execute("create table doc_index(id integer primary key, contents varchar)")
-        db.execute(
-            "create table batches(id integer primary key, batch_id integer unique, insert_ts text, shift integer, window integer)"
-        )
-        db.execute(
-            "create table history(id integer primary key, operation text, batch_id integer, insert_ts text, parameters text)"
-        )
-        db.execute(
-            'create table meta(id integer primary key, key text, val text, occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")'
-        )
-        db.execute("create table languages(id integer primary key, key text, val text)")
-        db.execute(
-            "create table files(id integer primary key, direction text, name text, guid text)"
-        )
-        db.execute("create table info(id integer primary key, key text, val text)")
-        db.execute("create table version(id integer primary key, version text)")
-        db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
-
-
 def fill_db_from_files(
     db_path,
     lang_from,
@@ -838,7 +803,7 @@ def fill_db_from_files(
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
-        init_document_db(db_path)
+        helper.init_document_db(db_path)
     lines = []
     if os.path.isfile(splitted_from_path):
         with open(splitted_from_path, mode="r", encoding="utf-8") as input_path:
@@ -939,7 +904,7 @@ def fill_db(
     """Fill document database (alignment) with prepared document lines"""
     if not os.path.isfile(db_path):
         logging.info(f"Initializing database {db_path}")
-        init_document_db(db_path)
+        helper.init_document_db(db_path)
     if len(splitted_from) > 0:
         splitted_from, meta, meta_par_ids = handle_marks(splitted_from)
         if len(splitted_from) == len(proxy_from):
@@ -1138,3 +1103,20 @@ def flatten_meta(meta, meta_par_ids, direction):
         for i, (val, par_id) in enumerate(zip(meta[key], meta_par_ids[key])):
             res.append((f"{key}_{direction}", val, i, par_id))
     return res
+
+
+def update_index_mapping(db_path, direction, line_id):
+    """Update mapping in index"""
+    with sqlite3.connect(db_path) as db:
+        index = get_doc_index(db)
+        for i, index_batch in enumerate(index):
+            for j, item in enumerate(index_batch):
+                if direction == "from":
+                    direction_id = 1
+                else:
+                    direction_id = 3
+                text_ids = json.loads(item[direction_id])
+                if any(x > line_id for x in text_ids):
+                    new_values = [x if x <= line_id else x + 1 for x in text_ids]
+                    index[i][j][direction_id] = json.dumps(new_values)
+        update_doc_index(db, index)
