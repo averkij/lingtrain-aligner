@@ -5,6 +5,7 @@ from lingtrain_aligner.helper import lazy_property
 from sentence_transformers import SentenceTransformer
 import torch
 
+from tqdm.auto import tqdm
 from transformers import AutoTokenizer, AutoModel
 
 if torch.cuda.is_available():
@@ -19,6 +20,7 @@ SENTENCE_TRANSFORMERS_MODEL_PATH = "./models/sentence_transformers-v2.bin"
 SENTENCE_TRANSFORMERS_XLM_100_MODEL_PATH = "./models/sentence_transformers_xlm_100.bin"
 SENTENCE_TRANSFORMERS_LABSE_MODEL_PATH = "./models/labse.bin"
 SENTENCE_TRANSFORMERS_RUBERT_TINY_MODEL_PATH = "./models/rubert-tiny.bin"
+SONAR_MODEL_PATH = "./models/sonar.bin"
 
 
 class SentenceTransformersModel:
@@ -135,10 +137,52 @@ class RuBertTinyModel:
         return vecs
 
 
+class SonarModel:
+    @lazy_property
+    def model(self):
+        if os.path.isfile(SONAR_MODEL_PATH):
+            print("Loading saved SONAR model")
+            _model = pickle.load(
+                open(SONAR_MODEL_PATH, "rb")
+            )
+        else:
+            print("Loading SONAR model from Internet.")
+            _model = AutoModel.from_pretrained(
+                "cointegrated/SONAR_200_text_encoder", cache_dir="./models_cache"
+            )
+        return _model
+
+    @lazy_property
+    def tokenizer(self):
+        print("Loading SONAR tokenizer from Internet.")
+        _tokenizer = AutoTokenizer.from_pretrained(
+            "cointegrated/SONAR_200_text_encoder", cache_dir="./models_cache"
+        )
+        return _tokenizer
+
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang="ell_Grek"):
+        # Ideally, we should indicate the real language of the text when encoding it.
+        # By default, we indicate greek, because with this language, it is the easiest for the model to understand that the language tag is wrong and ignore it.
+        self.tokenizer.src_lang = lang
+        vecs = []
+        wrapped_lines = tqdm(lines) if show_progress_bar else lines
+        for text in wrapped_lines:
+            t = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt").to(self.model.device)
+            with torch.inference_mode():
+                per_token_embeddings = self.model(**t).last_hidden_state
+                mask = t.attention_mask
+                embeddings = (per_token_embeddings * mask.unsqueeze(-1)).sum(1) / mask.unsqueeze(-1).sum(1)
+                if normalize_embeddings:
+                    embeddings = torch.nn.functional.normalize(embeddings)
+            vecs.append(embeddings[0].cpu().numpy())
+        return vecs
+
+
 sentence_transformers_model = SentenceTransformersModel()
 sentence_transformers_model_xlm_100 = SentenceTransformersModelXlm100()
 sentence_transformers_model_labse = SentenceTransformersModelLaBSE()
 rubert_tiny = RuBertTinyModel()
+sonar = SonarModel()
 
 
 # print(os.getcwd())
