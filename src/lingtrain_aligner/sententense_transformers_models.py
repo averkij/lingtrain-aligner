@@ -3,6 +3,7 @@ import pickle
 
 from lingtrain_aligner.helper import lazy_property
 from sentence_transformers import SentenceTransformer
+from transformers.models.m2m_100.modeling_m2m_100 import M2M100Encoder
 import torch
 
 from tqdm.auto import tqdm
@@ -147,7 +148,7 @@ class SonarModel:
             )
         else:
             print("Loading SONAR model from Internet.")
-            _model = AutoModel.from_pretrained(
+            _model = M2M100Encoder.from_pretrained(
                 "cointegrated/SONAR_200_text_encoder", cache_dir="./models_cache"
             )
         return _model
