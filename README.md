@@ -43,6 +43,13 @@ Automated alignment process relies on the sentence embeddings models. Embeddings
   - pretty heavy weights — 1.8GB
   - supports 100+ languages
   - full list of supported languages can be found [here](https://arxiv.org/abs/2007.01852)
+- **SONAR** (Sentence-level multimOdal and laNguage-Agnostic Representations)
+  - Supports about 200 languages (approximately [these](https://github.com/facebookresearch/flores/tree/main/flores200))
+  - A large model (3 GB of weights)
+  - Ideally, requires you to indicate the source language explicitly
+  - Was originally released at [facebookresearch/SONAR](https://github.com/facebookresearch/SONAR) based on [fairseq2](https://github.com/facebookresearch/fairseq2), 
+  but here uses [a HuggingFace port](https://huggingface.co/cointegrated/SONAR_200_text_encoder).
+  
 
 ## Profit
 
