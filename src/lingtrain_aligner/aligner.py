@@ -32,6 +32,7 @@ def get_line_vectors(
     normalize_embeddings=True,
     show_progress_bar=False,
     model=None,
+    lang="ell_Grek"
 ):
     """Calculate embedding of the string"""
     global custom_model_name, custom_model
@@ -54,7 +55,7 @@ def get_line_vectors(
         )
     else:
         return model_dispatcher.models[model_name].embed(
-            lines, embed_batch_size, normalize_embeddings, show_progress_bar
+            lines, embed_batch_size, normalize_embeddings, show_progress_bar, lang=lang
         )
 
 
@@ -85,6 +86,8 @@ def process_batch(
     model=None,
     use_proxy_from=False,
     use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -102,6 +105,7 @@ def process_batch(
                 normalize_embeddings,
                 show_progress_bar,
                 model,
+                lang_emb_from
             )
         ]
     else:
@@ -113,6 +117,7 @@ def process_batch(
                 normalize_embeddings,
                 show_progress_bar,
                 model,
+                lang_emb_from
             )
         ]
 
@@ -125,6 +130,7 @@ def process_batch(
                 normalize_embeddings,
                 show_progress_bar,
                 model,
+                lang_emb_to
             )
         ]
     else:
@@ -136,6 +142,7 @@ def process_batch(
                 normalize_embeddings,
                 show_progress_bar,
                 model,
+                lang_emb_to
             )
         ]
 
@@ -208,6 +215,8 @@ def align_texts(
     proxy_to=[],
     use_proxy_from=False,
     use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     result = []
     task_list = [
@@ -262,6 +271,8 @@ def align_texts(
             show_regression=show_regression,
             use_proxy_from=use_proxy_from,
             use_proxy_to=use_proxy_to,
+            lang_emb_from=lang_emb_from,
+            lang_emb_to=lang_emb_to
         )
         result.append((batch_id, texts_from, texts_to))
 
@@ -292,6 +303,8 @@ def align_db(
     use_proxy_to=False,
     use_segments=False,
     segmentation_marks=[preprocessor.H2],
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     result = []
     if use_segments:
@@ -382,6 +395,8 @@ def align_db(
             model=model,
             use_proxy_from=use_proxy_from,
             use_proxy_to=use_proxy_to,
+            lang_emb_from=lang_emb_from,
+            lang_emb_to=lang_emb_to
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1

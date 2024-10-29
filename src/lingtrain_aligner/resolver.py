@@ -196,6 +196,8 @@ def squash_conflict(
     model=None,
     use_proxy_from=False,
     use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     """Find the best solution"""
     splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
@@ -212,7 +214,7 @@ def squash_conflict(
     vec_lines_to = proxy_to if use_proxy_to else splitted_to
 
     vecs_from, vecs_to = get_vectors(
-        unique_variants, vec_lines_from, vec_lines_to, model_name, model
+        unique_variants, vec_lines_from, vec_lines_to, model_name, model, lang_emb_from, lang_emb_to
     )
 
     unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
@@ -392,6 +394,8 @@ def resolve_all_conflicts(
     model=None,
     use_proxy_from=False,
     use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     """Apply all the solutions to the database"""
     for _, conflict in enumerate(tqdm(conflicts[::-1])):
@@ -403,6 +407,8 @@ def resolve_all_conflicts(
             model,
             use_proxy_from,
             use_proxy_to,
+            lang_emb_from,
+            lang_emb_to
         )
         resolve_conflict(db_path, conflict, solution, lines_from, lines_to, show_logs)
 
@@ -415,11 +421,13 @@ def fix_start(
     model=None,
     use_proxy_from=False,
     use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek"
 ):
     """Find the first conflict and resolve"""
     splitted_from_len = len(aligner.get_splitted_from(db_path))
     splitted_to_len = len(aligner.get_splitted_to(db_path))
-    prepared_index, total_batches = prepare_index(db_path, 0)
+    prepared_index, _ = prepare_index(db_path, 0)
     chains_from, chains_to = get_good_chains(
         prepared_index,
         min_len=2,
@@ -438,6 +446,8 @@ def fix_start(
         model,
         use_proxy_from,
         use_proxy_to,
+        lang_emb_from,
+        lang_emb_to
     )
 
 
@@ -537,7 +547,7 @@ def try_fix_conflict_ending(index, ending_coordinate):
     return index_copy
 
 
-def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=None):
+def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=None, lang_emb_from="ell_Grek", lang_emb_to="ell_Grek"):
     strings_from = []
     strings_to = []
     for x in unique_variants:
@@ -545,8 +555,8 @@ def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=N
         strings_to.append(helper.get_string(splitted_to, x[1]))
 
     return (
-        aligner.get_line_vectors(strings_from, model_name, model=model),
-        aligner.get_line_vectors(strings_to, model_name, model=model),
+        aligner.get_line_vectors(strings_from, model_name, model=model, lang=lang_emb_from),
+        aligner.get_line_vectors(strings_to, model_name, model=model, lang=lang_emb_to),
     )
 
 

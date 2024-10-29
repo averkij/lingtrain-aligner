@@ -41,7 +41,7 @@ class SentenceTransformersModel:
             )
         return _model
 
-    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang):
         vecs = self.model.encode(
             lines,
             batch_size=batch_size,
@@ -71,7 +71,7 @@ class SentenceTransformersModelXlm100:
             )
         return _model
 
-    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang):
         vecs = self.model.encode(
             lines,
             batch_size=batch_size,
@@ -93,7 +93,7 @@ class SentenceTransformersModelLaBSE:
             _model = SentenceTransformer("LaBSE", cache_folder="./models_cache")
         return _model
 
-    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang):
         vecs = self.model.encode(
             lines,
             batch_size=batch_size,
@@ -126,7 +126,7 @@ class RuBertTinyModel:
         )
         return _tokenizer
 
-    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar):
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang):
         vecs = []
         for text in lines:
             t = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt")
@@ -162,9 +162,10 @@ class SonarModel:
         )
         return _tokenizer
 
-    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang="ell_Grek"):
+    def embed(self, lines, batch_size, normalize_embeddings, show_progress_bar, lang):
         # Ideally, we should indicate the real language of the text when encoding it.
         # By default, we indicate greek, because with this language, it is the easiest for the model to understand that the language tag is wrong and ignore it.
+        # LANGUAGE LIST https://github.com/facebookresearch/SONAR/blob/main/sonar/cards/text_sonar_basic_encoder.yaml
         self.tokenizer.src_lang = lang
         vecs = []
         wrapped_lines = tqdm(lines) if show_progress_bar else lines
