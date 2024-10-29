@@ -142,15 +142,16 @@ class SonarModel:
     @lazy_property
     def model(self):
         if os.path.isfile(SONAR_MODEL_PATH):
-            print("Loading saved SONAR model")
+            print(f"Loading saved SONAR model. Device: {device}")
             _model = pickle.load(
                 open(SONAR_MODEL_PATH, "rb")
             )
+            _model._target_device = device  # patch
         else:
-            print("Loading SONAR model from Internet.")
+            print(f"Loading SONAR model from Internet. Device: {device}")
             _model = M2M100Encoder.from_pretrained(
                 "cointegrated/SONAR_200_text_encoder", cache_dir="./models_cache"
-            )
+            ).to(device)
         return _model
 
     @lazy_property
@@ -168,7 +169,7 @@ class SonarModel:
         vecs = []
         wrapped_lines = tqdm(lines) if show_progress_bar else lines
         for text in wrapped_lines:
-            t = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt").to(self.model.device)
+            t = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt").to(device)
             with torch.inference_mode():
                 per_token_embeddings = self.model(**t).last_hidden_state
                 mask = t.attention_mask
