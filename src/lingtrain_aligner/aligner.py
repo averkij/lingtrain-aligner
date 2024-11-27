@@ -32,7 +32,7 @@ def get_line_vectors(
     normalize_embeddings=True,
     show_progress_bar=False,
     model=None,
-    lang="ell_Grek"
+    lang="ell_Grek",
 ):
     """Calculate embedding of the string"""
     global custom_model_name, custom_model
@@ -64,11 +64,59 @@ def clean_lines(lines):
     return [re.sub(to_delete, "", line) for line in lines]
 
 
+def update_embeddings(
+    db_path,
+    direction,
+    ids,
+    is_proxy,
+    model_name,
+    embed_batch_size,
+    normalize_embeddings,
+    show_progress_bar,
+    model,
+    lang_emb_from,
+    force=False,
+):
+    """Update embeddings in the database"""
+    if not force:
+        ids_to_update = helper.get_splitted_ids_without_embeddings(
+            db_path, direction, ids, is_proxy
+        )
+        print(f"Missing embeddings (total: {len(ids_to_update)}):", ids_to_update)
+    else:
+        ids_to_update = ids
+        print(f"Force update. Line IDs (total: {len(ids_to_update)}):", ids_to_update)
+
+    if ids_to_update:
+        if direction == "from":
+            lines = helper.get_splitted_from_by_id(db_path, ids_to_update)
+        else:
+            lines = helper.get_splitted_to_by_id(db_path, ids_to_update)
+        
+        if not is_proxy:
+            lines = [x[1] for x in lines]
+        else:
+            lines = [x[2] for x in lines]
+
+        embeddings = list(
+            get_line_vectors(
+                lines,
+                model_name,
+                embed_batch_size,
+                normalize_embeddings,
+                show_progress_bar,
+                model,
+                lang_emb_from,
+            )
+        )
+
+        helper.set_embeddings(db_path, direction, ids_to_update, embeddings, is_proxy)
+
+
 def process_batch(
+    db_path,
     lines_from_batch,
     lines_to_batch,
-    proxy_from_batch,
-    proxy_to_batch,
     line_ids_from,
     line_ids_to,
     batch_number,
@@ -87,7 +135,7 @@ def process_batch(
     use_proxy_from=False,
     use_proxy_to=False,
     lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
+    lang_emb_to="ell_Grek",
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -96,55 +144,36 @@ def process_batch(
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
 
-    if use_proxy_from:
-        vectors1 = [
-            *get_line_vectors(
-                proxy_from_batch,
-                model_name,
-                embed_batch_size,
-                normalize_embeddings,
-                show_progress_bar,
-                model,
-                lang_emb_from
-            )
-        ]
-    else:
-        vectors1 = [
-            *get_line_vectors(
-                lines_from_batch,
-                model_name,
-                embed_batch_size,
-                normalize_embeddings,
-                show_progress_bar,
-                model,
-                lang_emb_from
-            )
-        ]
+    update_embeddings(
+        db_path,
+        direction="from",
+        ids=line_ids_from,
+        is_proxy=use_proxy_from,
+        model_name=model_name,
+        embed_batch_size=embed_batch_size,
+        normalize_embeddings=normalize_embeddings,
+        show_progress_bar=show_progress_bar,
+        model=model,
+        lang_emb_from=lang_emb_from,
+    )
+    update_embeddings(
+        db_path,
+        direction="to",
+        ids=line_ids_to,
+        is_proxy=use_proxy_to,
+        model_name=model_name,
+        embed_batch_size=embed_batch_size,
+        normalize_embeddings=normalize_embeddings,
+        show_progress_bar=show_progress_bar,
+        model=model,
+        lang_emb_from=lang_emb_to,
+    )
 
-    if use_proxy_to:
-        vectors2 = [
-            *get_line_vectors(
-                proxy_to_batch,
-                model_name,
-                embed_batch_size,
-                normalize_embeddings,
-                show_progress_bar,
-                model,
-                lang_emb_to
-            )
-        ]
-    else:
-        vectors2 = [
-            *get_line_vectors(
-                lines_to_batch,
-                model_name,
-                embed_batch_size,
-                normalize_embeddings,
-                show_progress_bar,
-                model,
-                lang_emb_to
-            )
-        ]
+    vectors1 = helper.get_embeddings(db_path, "from", line_ids_from, use_proxy_from)
+    vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
+
+    vectors1 = [x[1] for x in vectors1]
+    vectors2 = [x[1] for x in vectors2]
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}."
@@ -194,92 +223,93 @@ def process_batch(
     #     return [], []
 
 
-def align_texts(
-    splitted_from,
-    splitted_to,
-    model_name,
-    batch_size,
-    window,
-    batch_ids=[],
-    save_pic=False,
-    lang_from="",
-    lang_to="",
-    img_path="",
-    embed_batch_size=10,
-    normalize_embeddings=True,
-    show_progress_bar=False,
-    shift=0,
-    show_info=False,
-    show_regression=False,
-    proxy_from=[],
-    proxy_to=[],
-    use_proxy_from=False,
-    use_proxy_to=False,
-    lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
-):
-    result = []
-    task_list = [
-        (
-            lines_from_batch,
-            lines_to_batch,
-            proxy_from_batch,
-            proxy_to_batch,
-            line_ids_from,
-            line_ids_to,
-            batch_id,
-        )
-        for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
-            splitted_from,
-            splitted_to,
-            batch_size,
-            window,
-            batch_ids,
-            batch_shift=shift,
-            iter3=proxy_from,
-            iter4=proxy_to,
-        )
-    ]
+# ---------------------- DEPRECATED ----------------------
+# def align_texts(
+#     splitted_from,
+#     splitted_to,
+#     model_name,
+#     batch_size,
+#     window,
+#     batch_ids=[],
+#     save_pic=False,
+#     lang_from="",
+#     lang_to="",
+#     img_path="",
+#     embed_batch_size=10,
+#     normalize_embeddings=True,
+#     show_progress_bar=False,
+#     shift=0,
+#     show_info=False,
+#     show_regression=False,
+#     proxy_from=[],
+#     proxy_to=[],
+#     use_proxy_from=False,
+#     use_proxy_to=False,
+#     lang_emb_from="ell_Grek",
+#     lang_emb_to="ell_Grek",
+# ):
+#     result = []
+#     task_list = [
+#         (
+#             lines_from_batch,
+#             lines_to_batch,
+#             proxy_from_batch,
+#             proxy_to_batch,
+#             line_ids_from,
+#             line_ids_to,
+#             batch_id,
+#         )
+#         for lines_from_batch, lines_to_batch, proxy_from_batch, proxy_to_batch, line_ids_from, line_ids_to, batch_id in get_batch_intersected(
+#             splitted_from,
+#             splitted_to,
+#             batch_size,
+#             window,
+#             batch_ids,
+#             batch_shift=shift,
+#             iter3=proxy_from,
+#             iter4=proxy_to,
+#         )
+#     ]
 
-    for (
-        lines_from_batch,
-        lines_to_batch,
-        proxy_from_batch,
-        proxy_to_batch,
-        line_ids_from,
-        line_ids_to,
-        batch_id,
-    ) in task_list:
-        texts_from, texts_to = process_batch(
-            lines_from_batch,
-            lines_to_batch,
-            proxy_from_batch,
-            proxy_to_batch,
-            line_ids_from,
-            line_ids_to,
-            batch_id,
-            model_name,
-            window,
-            embed_batch_size,
-            normalize_embeddings,
-            show_progress_bar,
-            save_pic,
-            lang_from,
-            lang_to,
-            img_path,
-            show_info=show_info,
-            show_regression=show_regression,
-            use_proxy_from=use_proxy_from,
-            use_proxy_to=use_proxy_to,
-            lang_emb_from=lang_emb_from,
-            lang_emb_to=lang_emb_to
-        )
-        result.append((batch_id, texts_from, texts_to))
+#     for (
+#         lines_from_batch,
+#         lines_to_batch,
+#         proxy_from_batch,
+#         proxy_to_batch,
+#         line_ids_from,
+#         line_ids_to,
+#         batch_id,
+#     ) in task_list:
+#         texts_from, texts_to = process_batch(
+#             lines_from_batch,
+#             lines_to_batch,
+#             proxy_from_batch,
+#             proxy_to_batch,
+#             line_ids_from,
+#             line_ids_to,
+#             batch_id,
+#             model_name,
+#             window,
+#             embed_batch_size,
+#             normalize_embeddings,
+#             show_progress_bar,
+#             save_pic,
+#             lang_from,
+#             lang_to,
+#             img_path,
+#             show_info=show_info,
+#             show_regression=show_regression,
+#             use_proxy_from=use_proxy_from,
+#             use_proxy_to=use_proxy_to,
+#             lang_emb_from=lang_emb_from,
+#             lang_emb_to=lang_emb_to,
+#         )
+#         result.append((batch_id, texts_from, texts_to))
 
-    # sort by batch_id (will be useful with parallel processing)
-    result.sort()
+#     # sort by batch_id (will be useful with parallel processing)
+#     result.sort()
 
-    return result
+#     return result
 
 
 def align_db(
@@ -304,7 +334,7 @@ def align_db(
     use_segments=False,
     segmentation_marks=[preprocessor.H2],
     lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
+    lang_emb_to="ell_Grek",
 ):
     result = []
     if use_segments:
@@ -366,18 +396,17 @@ def align_db(
     for (
         lines_from_batch,
         lines_to_batch,
-        proxy_from_batch,
-        proxy_to_batch,
+        _, #proxy_from_batch,
+        _, #proxy_to_batch,
         line_ids_from,
         line_ids_to,
         batch_id,
     ) in task_list:
         print(f"batch: {count} ({batch_id})")
         texts_from, texts_to = process_batch(
+            db_path,
             lines_from_batch,
             lines_to_batch,
-            proxy_from_batch,
-            proxy_to_batch,
             line_ids_from,
             line_ids_to,
             batch_id,
@@ -396,7 +425,7 @@ def align_db(
             use_proxy_from=use_proxy_from,
             use_proxy_to=use_proxy_to,
             lang_emb_from=lang_emb_from,
-            lang_emb_to=lang_emb_to
+            lang_emb_to=lang_emb_to,
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1

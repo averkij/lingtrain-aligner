@@ -4,18 +4,48 @@ import sqlite3
 from collections import defaultdict
 import os
 from lingtrain_aligner import constants as con
+import numpy as np
 
 
 def create_table_splitted(db, direction):
-    """Create tables for splitted lines. Created separately because PK is not needed anymore."""
+    """Create tables for splitted lines. Created separately because PK is not needed anymore.
+    Tables are recreated while using split confinct feature."""
     if direction == "from":
-        db.execute(
-            "create table splitted_from(id integer, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
-        )
+        db.execute("""
+            create table splitted_from(
+                id integer,
+                text text,
+                proxy_text text, 
+                exclude integer,
+                paragraph integer,
+                h1 integer,
+                h2 integer, 
+                h3 integer,
+                h4 integer,
+                h5 integer,
+                divider int,
+                embedding text,
+                proxy_embedding text
+            )
+        """)
     else:
-        db.execute(
-            "create table splitted_to(id integer, text text, proxy_text text, exclude integer, paragraph integer, h1 integer, h2 integer, h3 integer, h4 integer, h5 integer, divider int)"
-        )
+        db.execute("""
+            create table splitted_to(
+                id integer,
+                text text,
+                proxy_text text,
+                exclude integer,
+                paragraph integer, 
+                h1 integer,
+                h2 integer,
+                h3 integer,
+                h4 integer,
+                h5 integer,
+                divider int,
+                embedding text,
+                proxy_embedding text
+            )
+        """)
 
 
 def init_document_db(db_path):
@@ -48,6 +78,76 @@ def init_document_db(db_path):
         db.execute("create table info(id integer primary key, key text, val text)")
         db.execute("create table version(id integer primary key, version text)")
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
+
+
+def get_splitted_ids_without_embeddings(db_path, direction, line_ids=[], is_proxy=False):
+    """Get splitted ids without embeddings"""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+    with sqlite3.connect(db_path) as db:
+        if is_proxy:
+            if not line_ids:
+                res = db.execute(
+                    f"select s.id from {table_name} s where s.proxy_embedding is NULL"
+                ).fetchall()
+            else:
+                res = db.execute(
+                    f"select s.id from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])}) and s.proxy_embedding is NULL"
+                ).fetchall()
+        else:
+            if not line_ids:
+                res = db.execute(
+                    f"select s.id from {table_name} s where s.embedding is NULL"
+                ).fetchall()
+            else:
+                res = db.execute(
+                    f"select s.id from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])}) and s.embedding is NULL"
+                ).fetchall()
+    return [x[0] for x in res]
+
+
+def set_embeddings(db_path, direction, line_ids=[], embeddings=[], is_proxy=False):
+    """Fill embeddings in splitted table"""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+
+    #embeddings is numpy array
+    with sqlite3.connect(db_path) as db:
+        if is_proxy:
+            db.executemany(
+                f"update {table_name} set proxy_embedding=? where id=?",
+                [(json.dumps(x.tolist()), y) for x, y in zip(embeddings, line_ids)]
+            )
+        else:
+            db.executemany(
+                f"update {table_name} set embedding=? where id=?",
+                [(json.dumps(x.tolist()), y) for x, y in zip(embeddings, line_ids)]
+            ) 
+
+
+def get_embeddings(db_path, direction, line_ids=[], is_proxy=False):
+    """Get embeddings from splitted table"""
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+    with sqlite3.connect(db_path) as db:
+        if is_proxy:
+            res = db.execute(
+                f"select s.id, s.proxy_embedding from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])})"
+            ).fetchall()
+        else:
+            res = db.execute(
+                f"select s.id, s.embedding from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])})"
+            ).fetchall()
+    
+    res = [(x[0], np.array(json.loads(x[1])) if x[1] is not None else None) for x in res]
+
+    return res
 
 
 def get_doc_index_original(db_path):
@@ -319,13 +419,13 @@ def ensure_splitted_pk_is_not_exists(db_path, direction):
             old_table_name = f"old_{table_name}"
             # rename original_table
             rename_table(db, table_name, old_table_name)
-            # # create table without PK
+            # create table without PK
             create_table_splitted(db, direction)
-            # # copy data
+            # copy data
             db.execute(
                 f"insert into {table_name} select * from {old_table_name}",
             )
-            # # drop old table
+            # drop old table
             db.execute(f"drop table {old_table_name}")
 
 
