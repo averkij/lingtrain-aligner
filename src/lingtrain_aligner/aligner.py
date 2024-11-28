@@ -76,9 +76,10 @@ def update_embeddings(
     model,
     lang_emb_from,
     force=False,
+    store_embeddings=False,
 ):
     """Update embeddings in the database"""
-    if not force:
+    if not force or not store_embeddings:
         ids_to_update = helper.get_splitted_ids_without_embeddings(
             db_path, direction, ids, is_proxy
         )
@@ -110,7 +111,10 @@ def update_embeddings(
             )
         )
 
-        helper.set_embeddings(db_path, direction, ids_to_update, embeddings, is_proxy)
+        if store_embeddings:
+            helper.set_embeddings(db_path, direction, ids_to_update, embeddings, is_proxy)
+
+        return embeddings
 
 
 def process_batch(
@@ -136,6 +140,7 @@ def process_batch(
     use_proxy_to=False,
     lang_emb_from="ell_Grek",
     lang_emb_to="ell_Grek",
+    store_embeddings=False,
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -143,8 +148,8 @@ def process_batch(
 
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
-
-    update_embeddings(
+    
+    vectors1 = update_embeddings(
         db_path,
         direction="from",
         ids=line_ids_from,
@@ -155,8 +160,9 @@ def process_batch(
         show_progress_bar=show_progress_bar,
         model=model,
         lang_emb_from=lang_emb_from,
+        store_embeddings=store_embeddings,
     )
-    update_embeddings(
+    vectors2 = update_embeddings(
         db_path,
         direction="to",
         ids=line_ids_to,
@@ -167,13 +173,19 @@ def process_batch(
         show_progress_bar=show_progress_bar,
         model=model,
         lang_emb_from=lang_emb_to,
+        store_embeddings=store_embeddings,
     )
 
-    vectors1 = helper.get_embeddings(db_path, "from", line_ids_from, use_proxy_from)
-    vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
+    if store_embeddings:
+        print("Get embeddings from the database")
+        vectors1 = helper.get_embeddings(db_path, "from", line_ids_from, use_proxy_from)
+        vectors1 = [x[1] for x in vectors1]
 
-    vectors1 = [x[1] for x in vectors1]
-    vectors2 = [x[1] for x in vectors2]
+        vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
+        vectors2 = [x[1] for x in vectors2]
+
+    print([x[:5] for x in vectors1[:5]])
+    print([x[:5] for x in vectors2[:5]])
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}."
@@ -335,6 +347,7 @@ def align_db(
     segmentation_marks=[preprocessor.H2],
     lang_emb_from="ell_Grek",
     lang_emb_to="ell_Grek",
+    store_embeddings = False
 ):
     result = []
     if use_segments:
@@ -426,6 +439,7 @@ def align_db(
             use_proxy_to=use_proxy_to,
             lang_emb_from=lang_emb_from,
             lang_emb_to=lang_emb_to,
+            store_embeddings=store_embeddings,
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
