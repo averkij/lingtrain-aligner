@@ -83,10 +83,10 @@ def update_embeddings(
         ids_to_update = helper.get_splitted_ids_without_embeddings(
             db_path, direction, ids, is_proxy
         )
-        print(f"Missing embeddings (total: {len(ids_to_update)}):", ids_to_update)
+        # print(f"Missing embeddings (total: {len(ids_to_update)}):", ids_to_update)
     else:
         ids_to_update = ids
-        print(f"Force update. Line IDs (total: {len(ids_to_update)}):", ids_to_update)
+        # print(f"Force update. Line IDs (total: {len(ids_to_update)}):", ids_to_update)
 
     if ids_to_update:
         if direction == "from":
@@ -183,9 +183,6 @@ def process_batch(
 
         vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
         vectors2 = [x[1] for x in vectors2]
-
-    print([x[:5] for x in vectors1[:5]])
-    print([x[:5] for x in vectors2[:5]])
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}."

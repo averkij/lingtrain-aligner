@@ -11,6 +11,8 @@ from tqdm import tqdm
 import logging
 import copy
 
+import numpy as np
+
 
 def prepare_index(db_path, batch_id=-1, index=None):
     """Get totally flattened index ids"""
@@ -197,7 +199,9 @@ def squash_conflict(
     use_proxy_from=False,
     use_proxy_to=False,
     lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
 ):
     """Find the best solution"""
     splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
@@ -214,7 +218,18 @@ def squash_conflict(
     vec_lines_to = proxy_to if use_proxy_to else splitted_to
 
     vecs_from, vecs_to = get_vectors(
-        unique_variants, vec_lines_from, vec_lines_to, model_name, model, lang_emb_from, lang_emb_to
+        db_path,
+        unique_variants,
+        vec_lines_from,
+        vec_lines_to,
+        model_name,
+        model,
+        lang_emb_from,
+        lang_emb_to,
+        use_proxy_from=use_proxy_from,
+        use_proxy_to=use_proxy_to,
+        use_aggregation=use_aggregation,
+        aggregation_method=aggregation_method,
     )
 
     unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
@@ -395,7 +410,9 @@ def resolve_all_conflicts(
     use_proxy_from=False,
     use_proxy_to=False,
     lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
 ):
     """Apply all the solutions to the database"""
     for _, conflict in enumerate(tqdm(conflicts[::-1])):
@@ -408,7 +425,9 @@ def resolve_all_conflicts(
             use_proxy_from,
             use_proxy_to,
             lang_emb_from,
-            lang_emb_to
+            lang_emb_to,
+            use_aggregation,
+            aggregation_method,
         )
         resolve_conflict(db_path, conflict, solution, lines_from, lines_to, show_logs)
 
@@ -422,7 +441,9 @@ def fix_start(
     use_proxy_from=False,
     use_proxy_to=False,
     lang_emb_from="ell_Grek",
-    lang_emb_to="ell_Grek"
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
 ):
     """Find the first conflict and resolve"""
     splitted_from_len = len(aligner.get_splitted_from(db_path))
@@ -447,7 +468,9 @@ def fix_start(
         use_proxy_from,
         use_proxy_to,
         lang_emb_from,
-        lang_emb_to
+        lang_emb_to,
+        use_aggregation,
+        aggregation_method,
     )
 
 
@@ -534,6 +557,7 @@ def correct_conflicts(
 
 
 def try_fix_conflict_ending(index, ending_coordinate):
+    """Try to fix the conflict ending"""
     index_copy = copy.deepcopy(index)
     conf_start = index_copy[ending_coordinate[0]][ending_coordinate[1]]
     conf_start_to = json.loads(conf_start[3])  # [159, '[160]', 159, '[243]']
@@ -547,21 +571,127 @@ def try_fix_conflict_ending(index, ending_coordinate):
     return index_copy
 
 
-def get_vectors(unique_variants, splitted_from, splitted_to, model_name, model=None, lang_emb_from="ell_Grek", lang_emb_to="ell_Grek"):
+def get_vectors(
+    db_path,
+    unique_variants,
+    splitted_from,
+    splitted_to,
+    model_name,
+    model=None,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek",
+    use_proxy_from=False,
+    use_proxy_to=False,
+    use_aggregation=False,
+    aggregation_method="weighted_average",
+):
+    """Get embeddings for unique variants"""
+
     strings_from = []
     strings_to = []
     for x in unique_variants:
         strings_from.append(helper.get_string(splitted_from, x[0]))
         strings_to.append(helper.get_string(splitted_to, x[1]))
 
-    return (
-        aligner.get_line_vectors(strings_from, model_name, model=model, lang=lang_emb_from),
-        aligner.get_line_vectors(strings_to, model_name, model=model, lang=lang_emb_to),
-    )
+    # print("strings_from", len(strings_from), strings_from)
+    # print("strings_to", len(strings_from), strings_to)
+
+    if not use_aggregation:
+        # print("Generating embeddings for unique variants")
+        return (
+            aligner.get_line_vectors(
+                strings_from, model_name, model=model, lang=lang_emb_from
+            ),
+            aligner.get_line_vectors(
+                strings_to, model_name, model=model, lang=lang_emb_to
+            ),
+        )
+    else:
+        # print("Aggregating embeddings for unique variants")
+        embeddings_from, embeddings_to = [], []
+        sent_lens_from, sent_lens_to = [], []
+
+        for line_ids in unique_variants:
+            sent_lens_from.append(helper.get_string_lens(splitted_from, line_ids[0]))
+            sent_lens_to.append(helper.get_string_lens(splitted_to, line_ids[1]))
+
+            embeddings_from.append(
+                [
+                    embedding
+                    for _, embedding in helper.get_embeddings(
+                        db_path,
+                        direction="from",
+                        line_ids=line_ids[0],
+                        is_proxy=use_proxy_from,
+                    )
+                ]
+            )
+            embeddings_to.append(
+                [
+                    embedding
+                    for _, embedding in helper.get_embeddings(
+                        db_path,
+                        direction="to",
+                        line_ids=line_ids[1],
+                        is_proxy=use_proxy_to,
+                    )
+                ]
+            )
+
+        # print("embeddings_from", len(embeddings_from), [len(x) for x in embeddings_from])
+        # print("embeddings_to", len(embeddings_to), [len(x) for x in embeddings_to])
+
+        aggregated_from = []
+        for i, x in enumerate(embeddings_from):
+            aggregated_from.append(
+                arrgegate_embeddings(x, sent_lens_from[i], aggregation_method)
+            )
+        aggregated_to = []
+        for i, x in enumerate(embeddings_to):
+            aggregated_to.append(arrgegate_embeddings(x, sent_lens_to[i], aggregation_method))
+
+        return (aggregated_from, aggregated_to)
 
 
 def get_unique_sims(unique_variants, vecs_from, vecs_to):
+    """Calculate unique similarities"""
     res = dict()
     for i, x in enumerate(unique_variants):
         res[x] = 1 - spatial.distance.cosine(vecs_from[i], vecs_to[i])
     return res
+
+
+def arrgegate_embeddings(embeddings, sentence_lengths, method="weighted_average"):
+    """Embedding aggregation based on sentence lengths."""
+    if not embeddings:
+        raise ValueError("No embeddings provided.")
+    if method not in {"weighted_average", "length_scaling"}:
+        raise ValueError(
+            "Unknown method. Choose 'weighted_average' or 'length_scaling'."
+        )
+    embeddings = np.array(embeddings)
+    sentence_lengths = np.array(sentence_lengths)
+
+    # debug
+    # print("##########################")
+    # print("embeddings", len(embeddings))
+    # print("sentence_lengths", sentence_lengths)
+
+    if method == "weighted_average":
+        weights = sentence_lengths / np.sum(sentence_lengths)
+        aggregated_embedding = np.average(embeddings, axis=0, weights=weights)
+
+    elif method == "length_scaling":
+        scaled_embeddings = embeddings * sentence_lengths[:, None]
+        aggregated_embedding = np.mean(scaled_embeddings, axis=0)
+
+    norm = np.linalg.norm(aggregated_embedding)
+    if norm == 0:
+        raise ValueError("Norm of aggregated embedding is zero.")
+
+    # debug
+    # print("aggregated_embedding shape", aggregated_embedding.shape)
+    # print("aggregated_embedding", aggregated_embedding[:5])
+    # print("norm", norm)
+
+    return aggregated_embedding / norm

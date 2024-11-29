@@ -452,7 +452,7 @@ def update_processing_text(db_path, direction, line_id, val):
 
 
 def insert_new_splitted_line(db_path, direction, line_id):
-    """Insert line after splitting operation."""
+    """Insert line after splitting operation (split conflict feature)."""
     if direction == "from":
         table_name = "splitted_from"
     else:
@@ -465,9 +465,10 @@ def insert_new_splitted_line(db_path, direction, line_id):
             f"update {table_name} set id=id+1 where id>?",
             (line_id,),
         )
+        #TODO Recalculate embeddings (leave them empty?)
         db.execute(
-            f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider)
-                select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider from {table_name} where id=?""",
+            f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding)
+                select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding from {table_name} where id=?""",
             (line_id,),
         )
 
@@ -850,6 +851,11 @@ def get_string(dic, ids):
     """Join into string"""
     s = " ".join([dic[x] for x in ids])
     return s
+
+
+def get_string_lens(dic, ids):
+    """Get lengths of strings"""
+    return [len(dic[id]) for id in ids]
 
 
 def lazy_property(func):
