@@ -115,17 +115,18 @@ def set_embeddings(db_path, direction, line_ids=[], embeddings=[], is_proxy=Fals
     else:
         table_name = "splitted_to"
 
-    #embeddings is numpy array
+    #if embeddings are numpy arrays, convert them to lists, if not, leave them as they are
+    embeddings = [x.tolist() if isinstance(x, np.ndarray) else x for x in embeddings]
     with sqlite3.connect(db_path) as db:
         if is_proxy:
             db.executemany(
                 f"update {table_name} set proxy_embedding=? where id=?",
-                [(json.dumps(x.tolist()), y) for x, y in zip(embeddings, line_ids)]
+                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)]
             )
         else:
             db.executemany(
                 f"update {table_name} set embedding=? where id=?",
-                [(json.dumps(x.tolist()), y) for x, y in zip(embeddings, line_ids)]
+                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)]
             ) 
 
 

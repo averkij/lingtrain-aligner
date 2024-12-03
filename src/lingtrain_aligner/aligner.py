@@ -3,20 +3,18 @@
 import json
 import logging
 import os
+import random
 import re
 import sqlite3
 from collections import defaultdict
-from sentence_transformers import SentenceTransformer
 
 import numpy as np
-from lingtrain_aligner import (
-    model_dispatcher,
-    vis_helper,
-    preprocessor,
-    constants as con,
-    helper,
-)
+from lingtrain_aligner import constants as con
+from lingtrain_aligner import (helper, model_dispatcher, preprocessor,
+                               vis_helper)
 from scipy import spatial
+from sentence_transformers import SentenceTransformer
+import subprocess
 
 to_delete = re.compile(
     r'[」「@#$%^&»«“”„‟"\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*\(\)\[\]\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+'
@@ -59,6 +57,100 @@ def get_line_vectors(
         )
 
 
+def get_line_vectors_by_api(
+    lines,
+    line_ids,
+    tasks_path,
+    result_path,
+    api="openai",
+    model="text-embedding-3-small",
+    remove_after=False,
+    max_len=None,
+):
+    """Calculate embeddings of the strings using API"""
+    # make tasks
+    jobs = [
+        {"model": model, "input": line, "metadata": {"row_id": id}} for id, line in zip(line_ids, lines)
+    ]
+    with open(tasks_path, "w", encoding="utf8") as f:
+        for job in jobs:
+            json_string = json.dumps(job, ensure_ascii=False)
+            f.write(json_string + "\n")
+    
+    #run api_request_parallel_processor.py
+    #Example command to call script:
+    #```
+    #python examples/api_request_parallel_processor.py \
+    #--requests_filepath examples/data/example_requests_to_parallel_process.jsonl \
+    #--save_filepath examples/data/example_requests_to_parallel_process_results.jsonl \
+    #--request_url https://api.openai.com/v1/embeddings \
+    #--max_requests_per_minute 1500 \
+    #--max_tokens_per_minute 6250000 \
+    #--token_encoding_name cl100k_base \
+    #--max_attempts 5 \
+    #--logging_level 20
+    #```
+
+    if not os.path.exists(tasks_path):
+        raise FileNotFoundError(f"Tasks file {tasks_path} does not exist")
+    
+    print("Starting to process embeddings using API")
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    api_processor_path = os.path.join(current_dir, "api_request_parallel_processor.py")
+    command = [
+        "python",
+        api_processor_path,
+        "--requests_filepath", tasks_path,
+        "--save_filepath", result_path,
+        "--request_url", "https://api.openai.com/v1/embeddings",
+        "--max_requests_per_minute", "1500",
+        "--max_tokens_per_minute", "6250000",
+        "--token_encoding_name", "cl100k_base",
+        "--max_attempts", "5",
+        "--logging_level", "10"
+    ]
+    # print("Running the following command: ", " ".join(command))
+    subprocess.run(command, check=True)
+
+    # read result from file
+    embeddings = []
+    with open(result_path, "r", encoding="utf8") as f:
+        for line in f:
+            result = json.loads(line)
+            #line = [{"model": "text-embedding-3-small", "input": "The other, a broad-shouldered young man with tousled reddish hair, his checkered cap cocked back on his head, was wearing a cowboy shirt, wrinkled white trousers and black sneakers."}, {"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [ 0.008154794, -0.015893724]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 42, "total_tokens": 42}}, {"row_id": 4}]
+            embeddings.append({"embedding": result[1]["data"][0]["embedding"], "row_id": result[2]["row_id"]})
+
+    #sort array by row_id
+    embeddings = sorted(embeddings, key=lambda x: x["row_id"])
+
+    if remove_after:
+        try:
+            os.remove(tasks_path)
+            os.remove(result_path)
+        except:
+            pass
+
+    if max_len:
+        return embeddings[:max_len]
+    
+    embeddings = [x["embedding"] for x in embeddings]
+
+    return embeddings
+
+
+def normalize_l2(x):
+    x = np.array(x)
+    if x.ndim == 1:
+        norm = np.linalg.norm(x)
+        if norm == 0:
+            return x
+        return x / norm
+    else:
+        norm = np.linalg.norm(x, 2, axis=1, keepdims=True)
+        return np.where(norm == 0, x, x / norm)
+
+
 def clean_lines(lines):
     """Clean line"""
     return [re.sub(to_delete, "", line) for line in lines]
@@ -75,6 +167,9 @@ def update_embeddings(
     show_progress_bar,
     model,
     lang_emb_from,
+    use_api=False,
+    api="openai",
+    model_api="text-embedding-3-small",
     force=False,
     store_embeddings=False,
 ):
@@ -93,26 +188,36 @@ def update_embeddings(
             lines = helper.get_splitted_from_by_id(db_path, ids_to_update)
         else:
             lines = helper.get_splitted_to_by_id(db_path, ids_to_update)
-        
+
         if not is_proxy:
             lines = [x[1] for x in lines]
         else:
             lines = [x[2] for x in lines]
 
-        embeddings = list(
-            get_line_vectors(
-                lines,
-                model_name,
-                embed_batch_size,
-                normalize_embeddings,
-                show_progress_bar,
-                model,
-                lang_emb_from,
+        if not use_api:
+            embeddings = list(
+                get_line_vectors(
+                    lines,
+                    model_name,
+                    embed_batch_size,
+                    normalize_embeddings,
+                    show_progress_bar,
+                    model,
+                    lang_emb_from,
+                )
             )
-        )
+        else:
+            n = random.randint(0,100000)
+            tasks_path = db_path.replace(".db", f"_emb_tasks_{n}.jsonl")
+            result_path = db_path.replace(".db", f"_emb_result_{n}.jsonl")
+            embeddings = get_line_vectors_by_api(
+                lines, ids_to_update, tasks_path, result_path, api, model_api
+            )
 
         if store_embeddings:
-            helper.set_embeddings(db_path, direction, ids_to_update, embeddings, is_proxy)
+            helper.set_embeddings(
+                db_path, direction, ids_to_update, embeddings, is_proxy
+            )
 
         return embeddings
 
@@ -141,6 +246,7 @@ def process_batch(
     lang_emb_from="ell_Grek",
     lang_emb_to="ell_Grek",
     store_embeddings=False,
+    use_api=False,
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -148,7 +254,7 @@ def process_batch(
 
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
-    
+
     vectors1 = update_embeddings(
         db_path,
         direction="from",
@@ -161,7 +267,9 @@ def process_batch(
         model=model,
         lang_emb_from=lang_emb_from,
         store_embeddings=store_embeddings,
+        use_api=use_api,
     )
+    
     vectors2 = update_embeddings(
         db_path,
         direction="to",
@@ -174,6 +282,7 @@ def process_batch(
         model=model,
         lang_emb_from=lang_emb_to,
         store_embeddings=store_embeddings,
+        use_api=use_api,
     )
 
     if store_embeddings:
@@ -344,7 +453,8 @@ def align_db(
     segmentation_marks=[preprocessor.H2],
     lang_emb_from="ell_Grek",
     lang_emb_to="ell_Grek",
-    store_embeddings = False
+    store_embeddings=False,
+    use_api=False,
 ):
     result = []
     if use_segments:
@@ -406,8 +516,8 @@ def align_db(
     for (
         lines_from_batch,
         lines_to_batch,
-        _, #proxy_from_batch,
-        _, #proxy_to_batch,
+        _,  # proxy_from_batch,
+        _,  # proxy_to_batch,
         line_ids_from,
         line_ids_to,
         batch_id,
@@ -437,6 +547,7 @@ def align_db(
             lang_emb_from=lang_emb_from,
             lang_emb_to=lang_emb_to,
             store_embeddings=store_embeddings,
+            use_api=use_api,
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
