@@ -56,38 +56,38 @@ def prepare_index(db_path, batch_id=-1, index=None):
 
 
 def get_good_chains(
-    res, min_len=2, handle_start=False, handle_finish=False, len_from=-1, len_to=-1
+    ix, min_len=2, handle_start=False, handle_finish=False, len_from=-1, len_to=-1
 ):
     """Calculate valid alignment chains"""
 
-    curr_from = res[0]["from"][0]
-    curr_to = res[0]["to"]
+    curr_from = ix[0]["from"][0]
+    curr_to = ix[0]["to"]
 
     chains_from = []
     chains_to = []
 
-    chain_from = [(curr_from, res[0]["batch_id"], res[0]["sub_id"])]
-    chain_to = [(curr_to, res[0]["batch_id"], res[0]["sub_id"])]
+    chain_from = [(curr_from, ix[0]["batch_id"], ix[0]["sub_id"])]
+    chain_to = [(curr_to, ix[0]["batch_id"], ix[0]["sub_id"])]
 
     start = 1
 
     if handle_start and curr_to != 1:
         chains_from.append(chain_from)
-        chains_to.append([(1, res[0]["batch_id"], res[0]["sub_id"])])
-        chain_from = [(res[1]["from"][0], res[1]["batch_id"], res[1]["sub_id"])]
-        chain_to = [(res[1]["to"], res[1]["batch_id"], res[1]["sub_id"])]
-        curr_from = res[1]["from"][0]
-        curr_to = res[1]["to"]
+        chains_to.append([(1, ix[0]["batch_id"], ix[0]["sub_id"])])
+        chain_from = [(ix[1]["from"][0], ix[1]["batch_id"], ix[1]["sub_id"])]
+        chain_to = [(ix[1]["to"], ix[1]["batch_id"], ix[1]["sub_id"])]
+        curr_from = ix[1]["from"][0]
+        curr_to = ix[1]["to"]
         start = 2
 
-    for i in range(start, len(res)):
-        val_from = res[i]["from"][0]
-        val_to = res[i]["to"]
+    for i in range(start, len(ix)):
+        val_from = ix[i]["from"][0]
+        val_to = ix[i]["to"]
 
         # continue chain
         if val_to == curr_to + 1:
-            chain_from.append((val_from, res[i]["batch_id"], res[i]["sub_id"]))
-            chain_to.append((val_to, res[i]["batch_id"], res[i]["sub_id"]))
+            chain_from.append((val_from, ix[i]["batch_id"], ix[i]["sub_id"]))
+            chain_to.append((val_to, ix[i]["batch_id"], ix[i]["sub_id"]))
             curr_from = val_from
             curr_to = val_to
 
@@ -95,15 +95,15 @@ def get_good_chains(
         elif len(chain_to) >= min_len:
             chains_from.append(chain_from)
             chains_to.append(chain_to)
-            chain_from = [(val_from, res[i]["batch_id"], res[i]["sub_id"])]
-            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
+            chain_from = [(val_from, ix[i]["batch_id"], ix[i]["sub_id"])]
+            chain_to = [(val_to, ix[i]["batch_id"], ix[i]["sub_id"])]
             curr_from = val_from
             curr_to = val_to
 
         # start new chain
         else:
-            chain_from = [(val_from, res[i]["batch_id"], res[i]["sub_id"])]
-            chain_to = [(val_to, res[i]["batch_id"], res[i]["sub_id"])]
+            chain_from = [(val_from, ix[i]["batch_id"], ix[i]["sub_id"])]
+            chain_to = [(val_to, ix[i]["batch_id"], ix[i]["sub_id"])]
             curr_from = val_from
             curr_to = val_to
 
@@ -111,8 +111,8 @@ def get_good_chains(
         chains_from.append(chain_from)
         chains_to.append(chain_to)
     elif handle_finish:
-        chains_from.append([(len_from, res[-1]["batch_id"], res[-1]["sub_id"])])
-        chains_to.append([(len_to, res[-1]["batch_id"], res[-1]["sub_id"])])
+        chains_from.append([(len_from, ix[-1]["batch_id"], ix[-1]["sub_id"])])
+        chains_to.append([(len_to, ix[-1]["batch_id"], ix[-1]["sub_id"])])
 
     # print("handle_finish", handle_finish)
     # print("chains_from", chains_from)
@@ -644,11 +644,11 @@ def get_vectors(
         aggregated_from = []
         for i, x in enumerate(embeddings_from):
             aggregated_from.append(
-                arrgegate_embeddings(x, sent_lens_from[i], aggregation_method)
+                aggregate_embeddings(x, sent_lens_from[i], aggregation_method)
             )
         aggregated_to = []
         for i, x in enumerate(embeddings_to):
-            aggregated_to.append(arrgegate_embeddings(x, sent_lens_to[i], aggregation_method))
+            aggregated_to.append(aggregate_embeddings(x, sent_lens_to[i], aggregation_method))
 
         return (aggregated_from, aggregated_to)
 
@@ -661,37 +661,76 @@ def get_unique_sims(unique_variants, vecs_from, vecs_to):
     return res
 
 
-def arrgegate_embeddings(embeddings, sentence_lengths, method="weighted_average"):
-    """Embedding aggregation based on sentence lengths."""
+def aggregate_embeddings(embeddings, sentence_lengths, method, **kwargs):
+    """
+    Embedding aggregation function with multiple methods.
+
+    Parameters
+    ----------
+    embeddings : list or np.ndarray
+        A list (or array) of sentence embeddings. Shape: (n_sentences, embedding_dim).
+    sentence_lengths : list or np.ndarray
+        Lengths (e.g., token counts) corresponding to each sentence. Shape: (n_sentences,).
+    method : str
+        Aggregation method. One of:
+        ["weighted_average", "length_scaling", "max_pooling", "logarithmic_scaling"].
+    kwargs : dict
+        Additional parameters for certain methods.
+        - For "logarithmic_scaling", you can pass {"offset": float} to modify the log offset.
+    
+    Returns
+    -------
+    np.ndarray
+        The aggregated embedding of shape (embedding_dim,).
+    """
     if not embeddings:
         raise ValueError("No embeddings provided.")
-    if method not in {"weighted_average", "length_scaling"}:
+    if method not in {
+        "weighted_average",
+        "length_scaling",
+        "max_pooling",
+        "logarithmic_scaling",
+    }:
         raise ValueError(
-            "Unknown method. Choose 'weighted_average' or 'length_scaling'."
+            "Unknown method. Choose one of: "
+            "'weighted_average', 'length_scaling', 'max_pooling', 'logarithmic_scaling'."
         )
+
     embeddings = np.array(embeddings)
     sentence_lengths = np.array(sentence_lengths)
 
-    # debug
-    # print("##########################")
-    # print("embeddings", len(embeddings))
-    # print("sentence_lengths", sentence_lengths)
+    # Handle edge cases
+    if embeddings.ndim != 2:
+        raise ValueError("Embeddings must be 2-dimensional (n_sentences x embedding_dim).")
+    if len(sentence_lengths) != embeddings.shape[0]:
+        raise ValueError("sentence_lengths must match the number of embeddings.")
+
+    method = method.lower()
 
     if method == "weighted_average":
+        # Weighted by sentence length, then average
         weights = sentence_lengths / np.sum(sentence_lengths)
         aggregated_embedding = np.average(embeddings, axis=0, weights=weights)
 
     elif method == "length_scaling":
+        # Multiply each embedding by its corresponding length, then mean
         scaled_embeddings = embeddings * sentence_lengths[:, None]
         aggregated_embedding = np.mean(scaled_embeddings, axis=0)
 
+    elif method == "max_pooling":
+        # Take the component-wise maximum across all embeddings
+        aggregated_embedding = np.max(embeddings, axis=0)
+
+    elif method == "logarithmic_scaling":
+        # Weight embeddings by log(1 + length), or a custom offset
+        offset = kwargs.get("offset", 1.0)  # default offset=1
+        log_lengths = np.log(offset + sentence_lengths)
+        scaled_embeddings = embeddings * log_lengths[:, None]
+        aggregated_embedding = np.mean(scaled_embeddings, axis=0)
+
+    # Normalize the final embedding
     norm = np.linalg.norm(aggregated_embedding)
     if norm == 0:
         raise ValueError("Norm of aggregated embedding is zero.")
-
-    # debug
-    # print("aggregated_embedding shape", aggregated_embedding.shape)
-    # print("aggregated_embedding", aggregated_embedding[:5])
-    # print("norm", norm)
 
     return aggregated_embedding / norm
