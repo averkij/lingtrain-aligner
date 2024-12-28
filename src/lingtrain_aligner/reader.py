@@ -73,7 +73,7 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     index = helper.get_flatten_doc_index(db_path)
     page = list(zip(index, range(len(index))))
 
-    data, _, __ = helper.get_doc_items(page, db_path)
+    data, _, _ = helper.get_doc_items(page, db_path)
     lang_from, lang_to = ["from", "to"]
 
     # extract paragraph info
@@ -149,7 +149,7 @@ def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
 
         # get ordered data
         page = list(zip(index, range(len(index))))
-        data, _, __ = helper.get_doc_items(page, db_path)
+        data, _, _ = helper.get_doc_items(page, db_path)
         datas.append(data)
 
         # extract paragraph info

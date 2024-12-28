@@ -11,7 +11,8 @@ def create_table_splitted(db, direction):
     """Create tables for splitted lines. Created separately because PK is not needed anymore.
     Tables are recreated while using split confinct feature."""
     if direction == "from":
-        db.execute("""
+        db.execute(
+            """
             create table splitted_from(
                 id integer,
                 text text,
@@ -27,9 +28,11 @@ def create_table_splitted(db, direction):
                 embedding text,
                 proxy_embedding text
             )
-        """)
+        """
+        )
     else:
-        db.execute("""
+        db.execute(
+            """
             create table splitted_to(
                 id integer,
                 text text,
@@ -45,7 +48,8 @@ def create_table_splitted(db, direction):
                 embedding text,
                 proxy_embedding text
             )
-        """)
+        """
+        )
 
 
 def init_document_db(db_path):
@@ -80,7 +84,9 @@ def init_document_db(db_path):
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
 
-def get_splitted_ids_without_embeddings(db_path, direction, line_ids=[], is_proxy=False):
+def get_splitted_ids_without_embeddings(
+    db_path, direction, line_ids=[], is_proxy=False
+):
     """Get splitted ids without embeddings"""
     if direction == "from":
         table_name = "splitted_from"
@@ -115,19 +121,19 @@ def set_embeddings(db_path, direction, line_ids=[], embeddings=[], is_proxy=Fals
     else:
         table_name = "splitted_to"
 
-    #if embeddings are numpy arrays, convert them to lists, if not, leave them as they are
+    # if embeddings are numpy arrays, convert them to lists, if not, leave them as they are
     embeddings = [x.tolist() if isinstance(x, np.ndarray) else x for x in embeddings]
     with sqlite3.connect(db_path) as db:
         if is_proxy:
             db.executemany(
                 f"update {table_name} set proxy_embedding=? where id=?",
-                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)]
+                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)],
             )
         else:
             db.executemany(
                 f"update {table_name} set embedding=? where id=?",
-                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)]
-            ) 
+                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)],
+            )
 
 
 def get_embeddings(db_path, direction, line_ids=[], is_proxy=False):
@@ -145,8 +151,10 @@ def get_embeddings(db_path, direction, line_ids=[], is_proxy=False):
             res = db.execute(
                 f"select s.id, s.embedding from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])})"
             ).fetchall()
-    
-    res = [(x[0], np.array(json.loads(x[1])) if x[1] is not None else None) for x in res]
+
+    res = [
+        (x[0], np.array(json.loads(x[1])) if x[1] is not None else None) for x in res
+    ]
 
     return res
 
@@ -466,7 +474,7 @@ def insert_new_splitted_line(db_path, direction, line_id):
             f"update {table_name} set id=id+1 where id>?",
             (line_id,),
         )
-        #TODO Recalculate embeddings (leave them empty?)
+        # TODO Recalculate embeddings (leave them empty?)
         db.execute(
             f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding)
                 select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding from {table_name} where id=?""",
@@ -543,6 +551,14 @@ def get_proxy_dict(items):
     return res
 
 
+def get_splitted_dict(items):
+    """Get splitted sentences as dict"""
+    res = dict()
+    for item in items:
+        res[item[0]] = item[1]
+    return res
+
+
 def get_paragraph_dict(items):
     """Get paragraphs info as dict"""
     res = dict()
@@ -563,8 +579,7 @@ def get_doc_items(index_items, db_path):
     splitted_from = get_splitted_from_by_id(db_path, from_ids)
     splitted_to = get_splitted_to_by_id(db_path, to_ids)
 
-    for i, (data, texts) in enumerate(
-        zip(index_items, get_doc_page(db_path, [x[0][0][0] for x in index_items]))
+    for (data, texts) in zip(index_items, get_doc_page(db_path, [x[0][0][0] for x in index_items])
     ):
         res.append(
             {
@@ -583,7 +598,51 @@ def get_doc_items(index_items, db_path):
                 "processing_to_id": data[0][0][2],
             }
         )
-    return res, get_proxy_dict(splitted_from), get_proxy_dict(splitted_to)
+    return (
+        res,
+        get_proxy_dict(splitted_from),
+        get_proxy_dict(splitted_to),
+    )
+
+
+def get_doc_items_with_splitted(index_items, db_path):
+    """Get document items by ids"""
+    res = []
+
+    from_ids, to_ids = set(), set()
+    for item in index_items:
+        from_ids.update(json.loads(item[0][0][1]))
+        to_ids.update(json.loads(item[0][0][3]))
+
+    splitted_from = get_splitted_from_by_id(db_path, from_ids)
+    splitted_to = get_splitted_to_by_id(db_path, to_ids)
+
+    for (data, texts) in zip(index_items, get_doc_page(db_path, [x[0][0][0] for x in index_items])
+    ):
+        res.append(
+            {
+                "index_id": data[1],  # absolute position in index
+                # from
+                "batch_id": texts[2],
+                "batch_index_id": data[0][1],  # relative position in index batch
+                "text_from": texts[0],
+                "line_id_from": data[0][0][1],  # array with ids
+                # primary key in DB (processing_from)
+                "processing_from_id": data[0][0][0],
+                # to
+                "text_to": texts[1],
+                "line_id_to": data[0][0][3],  # array with ids
+                # primary key in DB (processing_to)
+                "processing_to_id": data[0][0][2],
+            }
+        )
+    return (
+        res,
+        get_proxy_dict(splitted_from),
+        get_proxy_dict(splitted_to),
+        get_splitted_dict(splitted_from),
+        get_splitted_dict(splitted_to),
+    )
 
 
 def read_processing(db_path, batch_ids=[]):
