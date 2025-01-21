@@ -1,6 +1,5 @@
 """Texts splitter part of the engine"""
 
-
 import re
 
 import razdel
@@ -26,6 +25,7 @@ NL_CODE = "nl"
 SW_CODE = "sw"
 UK_CODE = "uk"
 CV_CODE = "cv"
+HY_CODE = "hy"
 XX_CODE = "xx"
 
 LANGUAGES = {
@@ -49,6 +49,7 @@ LANGUAGES = {
     NL_CODE: {"name": "Dutch"},
     UK_CODE: {"name": "Ukrainian"},
     CV_CODE: {"name": "Chuvash"},
+    HY_CODE: {"name": "Armenian"},
     XX_CODE: {"name": "Unknown"},
 }
 
@@ -107,6 +108,14 @@ def split_jp(line):
             res[i - 1] = res[i - 1] + "」"
             res[i] = res[i][1:]
     return res
+
+
+def split_hy(line):
+    """Split line in Armenian"""
+    pattern = r"[։՞?!]+"
+    raw_sentences = re.split(pattern, line)
+    sentences = [s.strip() for s in raw_sentences if s.strip()]
+    return sentences
 
 
 def after_fr(lines):
@@ -179,27 +188,28 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
         else:
             acc.append(line)
     if acc:
-        sentences = ensure_paragraph_splitting(split_by_sentences(acc, langcode, clean_text))
+        sentences = ensure_paragraph_splitting(
+            split_by_sentences(acc, langcode, clean_text)
+        )
         res.extend(sentences)
     return res
 
 
-splitter_fn = {
-    JP_CODE: split_jp,
-    ZH_CODE: split_zh
-}
+splitter_fn = {JP_CODE: split_jp, ZH_CODE: split_zh, HY_CODE: split_hy}
 
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
-    DE_CODE: [(german_quotes, '"'), (german_dates, rf"\1\2{german_foo}\3\4"), *DEFAULT_PREPROCESSING,],
+    DE_CODE: [
+        (german_quotes, '"'),
+        (german_dates, rf"\1\2{german_foo}\3\4"),
+        *DEFAULT_PREPROCESSING,
+    ],
     ZH_CODE: [(pattern_zh, "")],
     JP_CODE: [(pat_comma, "。"), (pattern_jp, "")],
 }
 
-postprocessing_rules = {
-    FR_CODE: after_fr,
-    DE_CODE: after_de
-}
+postprocessing_rules = {FR_CODE: after_fr, DE_CODE: after_de}
+
 
 def split_by_sentences(lines, langcode, clean_text=True):
     """Split line by sentences using language specific rules"""
@@ -209,7 +219,7 @@ def split_by_sentences(lines, langcode, clean_text=True):
 
     if clean_text:
         pre_rules = preprocessing_rules.get(langcode, [*DEFAULT_PREPROCESSING])
-    else:        
+    else:
         pre_rules = [*DEFAULT_PREPROCESSING]
 
     sentences = preprocess(line, pre_rules, split_fn, after_fn)
@@ -220,7 +230,9 @@ def split_by_sentences(lines, langcode, clean_text=True):
     return sentences
 
 
-def split_by_sentences_and_save(raw_path, splitted_path, langcode, handle_marks=False, clean_text=True):
+def split_by_sentences_and_save(
+    raw_path, splitted_path, langcode, handle_marks=False, clean_text=True
+):
     """Split raw text file by sentences and save"""
     with open(raw_path, mode="r", encoding="utf-8") as input_file, open(
         splitted_path, mode="w", encoding="utf-8"
