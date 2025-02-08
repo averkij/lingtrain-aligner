@@ -110,12 +110,11 @@ def split_jp(line):
     return res
 
 
-def split_hy(line):
+def split_hy(text):
     """Split line in Armenian"""
-    pattern = r"[։՞?!]+"
-    raw_sentences = re.split(pattern, line)
-    sentences = [s.strip() for s in raw_sentences if s.strip()]
-    return sentences
+    res = list(re.findall(r"[^։:!]+[։:!]?", text))
+    res = [s.strip() for s in res if s.strip()]
+    return res
 
 
 def after_fr(lines):
