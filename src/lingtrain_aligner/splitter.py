@@ -111,8 +111,9 @@ def split_jp(line):
 
 
 def split_hy(text):
-    """Split line in Armenian"""
-    res = list(re.findall(r"[^։:!]+[։:!]?", text))
+    """Split string in Armenian"""
+    text = re.sub(r"\.{3,}", "…", text)
+    res = list(re.findall(r"[^։:…]+[։:…]?", text))
     res = [s.strip() for s in res if s.strip()]
     return res
 
