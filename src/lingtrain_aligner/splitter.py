@@ -176,6 +176,8 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     res, acc = [], []
     marks = preprocessor.get_all_meta_marks()
     for line in lines:
+        if not line.strip():
+            continue
         if any(m in line for m in marks):
             # print("found mark", line)
             if acc:
