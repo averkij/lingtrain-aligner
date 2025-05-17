@@ -467,7 +467,7 @@ def insert_new_splitted_line(db_path, direction, line_id):
     else:
         table_name = "splitted_to"
 
-    print("line_id", line_id, direction, table_name)
+    alignment_version = get_version(db_path)
 
     with sqlite3.connect(db_path) as db:
         db.execute(
@@ -475,11 +475,19 @@ def insert_new_splitted_line(db_path, direction, line_id):
             (line_id,),
         )
         # TODO Recalculate embeddings (leave them empty?)
-        db.execute(
-            f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding)
-                select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding from {table_name} where id=?""",
-            (line_id,),
-        )
+
+        if alignment_version >= 7.0:
+            db.execute(
+                f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding)
+                    select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, embedding, proxy_embedding from {table_name} where id=?""",
+                (line_id,),
+            )
+        else:
+            db.execute(
+                f"""insert into {table_name}(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider)
+                    select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider from {table_name} where id=?""",
+                (line_id,),
+            )
 
 
 def update_processing_mapping(db_path, direction, line_id):
