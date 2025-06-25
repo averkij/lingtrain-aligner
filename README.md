@@ -1,59 +1,80 @@
-[![PyPI - PyPi](https://img.shields.io/pypi/v/lingtrain-aligner)](https://pypi.org/project/lingtrain-aligner) [![Downloads](https://static.pepy.tech/personalized-badge/lingtrain-aligner?period=total&units=abbreviation&left_color=grey&right_color=green&left_text=Downloads)](https://pepy.tech/project/lingtrain-aligner)
-
 # Lingtrain Aligner
 
-ML powered library for the accurate texts alignment in different languages.
+[![PyPI - PyPi](https://img.shields.io/pypi/v/lingtrain-aligner)](https://pypi.org/project/lingtrain-aligner)
+[![Downloads](https://static.pepy.tech/personalized-badge/lingtrain-aligner?period=total&units=abbreviation&left_color=grey&right_color=green&left_text=Downloads)](https://pepy.tech/project/lingtrain-aligner)
 
-- 🔥 [How to create bilingual books. Part 2. Lingtrain Alignment Studio](https://habr.com/ru/post/590549/)
-- 💡 [Lingtrain Aligner. How to make parallel books for language learning. Part 1. Python and Colab version](https://habr.com/ru/post/586574/)
+**Lingtrain Aligner** is a powerful, ML-powered library for accurately aligning texts in different languages. It's designed to build parallel corpora from two or more raw texts, even when they have different structures.
 
-![Cover](https://i.imgur.com/WQWB4v0.png)
+![Cover](img/cover.png)
 
-## Purpose
+## Key Features
 
-Main purpose of this alignment tool is to build parallel corpora using two or more raw texts in different languages. Texts should contain the same information (i.e., one text should be a translated analog oh the other text). E.g., it can be the _Drei Kameraden_ by Remarque in German and the _Three Comrades_ — it's translation into English.
+- **Automated Alignment:** Uses multilingual machine learning models to automatically match sentence pairs.
+- **Conflict Resolution:** Intelligently handles cases where one sentence is translated as multiple sentences, or vice-versa.
+- **Multiple Output Formats:** Generates parallel corpora as separate plain text files or as a merged TMX file for use in translation memory tools.
+- **Flexible Model Support:** Supports a variety of sentence embedding models, allowing you to choose the best one for your language and performance needs.
 
-## Process
+## Getting Started
 
-There are plenty of obstacles during the alignment process:
+### Installation
 
-- The translator could translate several sentences as one.
-- The translator could translate one sentence as many.
-- There are some service marks in the text
-    - Page numbers
-    - Chapters and other section headings
-    - Author and title information
-    - Notes
+To get started with Lingtrain Aligner, install the library from PyPI:
 
-While service marks can be handled manually (the tool helps to detect them), the translation conflicts should be handled more carefully.
+```bash
+pip install lingtrain-aligner
+```
 
-Lingtrain Aligner tool will do almost all alignment work for you. It matches the sentence pairs automatically using the multilingual machine learning models. Then it searches for the alignment conflicts and resolves them. As output you will have the parallel corpora either as two distinct plain text files or as the merged corpora in widely used TMX format.
+## Usage
 
-### Supported languages and models
+Here's a simple example of how to align two texts:
 
-Automated alignment process relies on the sentence embeddings models. Embeddings are multidimensional vectors of a special kind which are used to calculate a distance between the sentences. Supported languages list depend on the selected backend model.
+```python
+from lingtrain_aligner.aligner import Aligner
 
-- **distiluse-base-multilingual-cased-v2**
-  - more reliable and fast
-  - moderate weights size — 500MB
-  - supports 50+ languages
-  - full list of supported languages can be found in [this paper](https://arxiv.org/abs/2004.09813)
-- **LaBSE (Language-agnostic BERT Sentence Embedding)**
-  - can be used for rare languages
-  - pretty heavy weights — 1.8GB
-  - supports 100+ languages
-  - full list of supported languages can be found [here](https://arxiv.org/abs/2007.01852)
-- **SONAR** (Sentence-level multimOdal and laNguage-Agnostic Representations)
-  - Supports about 200 languages (approximately [these](https://github.com/facebookresearch/flores/tree/main/flores200))
-  - A large model (3 GB of weights)
-  - Ideally, requires you to indicate the source language explicitly
-  - Was originally released at [facebookresearch/SONAR](https://github.com/facebookresearch/SONAR) based on [fairseq2](https://github.com/facebookresearch/fairseq2), 
-  but here uses [a HuggingFace port](https://huggingface.co/cointegrated/SONAR_200_text_encoder).
-  
+# Initialize the Aligner with the desired model
+aligner = Aligner(model_name="distiluse-base-multilingual-cased-v2")
 
-## Profit
+# Load your texts
+original_text = "path/to/your/original/text.txt"
+translated_text = "path/to/your/translated/text.txt"
 
-- Parallel corpora by itself can used as the resource for machine translation models or for linguistic researches.
-- My personal goal of this project is to help people building parallel translated books for the foreign language learning. 
+# Align the texts
+aligned_texts = aligner.align(original_text, translated_text)
 
+# Save the aligned texts
+aligner.save_aligned_texts("aligned_original.txt", "aligned_translated.txt")
+```
 
+## Supported Models
+
+Lingtrain Aligner supports several multilingual models, each with its own strengths:
+
+| Model | Key Features | Size | Supported Languages |
+|---|---|---|---|
+| **distiluse-base-multilingual-cased-v2** | Fast and reliable | 500MB | 50+ |
+| **LaBSE** | Ideal for rare languages | 1.8GB | 100+ |
+| **SONAR** | Supports a vast number of languages | 3GB | ~200 |
+
+## How It Works
+
+The alignment process faces several challenges, such as:
+
+- **Structural Differences:** Translators may merge or split sentences.
+- **Service Marks:** Texts often contain page numbers, chapter headings, and other non-content elements.
+
+Lingtrain Aligner addresses these issues by:
+
+1. **Preprocessing:** Cleaning and preparing the texts for alignment.
+2. **Sentence Embedding:** Using a selected model to create vector representations of each sentence.
+3. **Similarity Matching:** Comparing sentence vectors to find the best matches.
+4. **Conflict Resolution:** Applying algorithms to resolve alignment conflicts.
+
+The result is a high-quality parallel corpus suitable for machine translation research, linguistic analysis, or creating bilingual reading materials.
+
+## Contributing
+
+Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue on the [GitHub repository](https://github.com/averkij/lingtrain-aligner).
+
+## License
+
+This project is licensed under the GNU General Public License v3 (GPLv3). See the [LICENSE](LICENSE) file for more details.
