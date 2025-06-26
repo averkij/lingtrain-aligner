@@ -5,7 +5,7 @@
 
 **Lingtrain Aligner** is a powerful, ML-powered library for accurately aligning texts in different languages. It's designed to build parallel corpora from two or more raw texts, even when they have different structures.
 
-![Cover](img/cover.png)
+<img src="img/title_image.png" width="640"/>
 
 ## Key Features
 
