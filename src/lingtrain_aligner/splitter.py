@@ -26,6 +26,7 @@ SW_CODE = "sw"
 UK_CODE = "uk"
 CV_CODE = "cv"
 HY_CODE = "hy"
+UG_CODE = "ug"
 XX_CODE = "xx"
 
 LANGUAGES = {
@@ -50,6 +51,7 @@ LANGUAGES = {
     UK_CODE: {"name": "Ukrainian"},
     CV_CODE: {"name": "Chuvash"},
     HY_CODE: {"name": "Armenian"},
+    UG_CODE: {"name": "Uyghur"},
     XX_CODE: {"name": "Unknown"},
 }
 
@@ -197,7 +199,43 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     return res
 
 
-splitter_fn = {JP_CODE: split_jp, ZH_CODE: split_zh, HY_CODE: split_hy}
+def split_ug(text):
+    """Split string in Uyghur with specific punctuation handling"""
+    # First, protect text within «» quotes by temporarily replacing them
+    protected_quotes = {}
+    quote_pattern = re.compile(r'«[^»]*»')
+    
+    def protect_quotes(match):
+        placeholder = f'__QUOTE_{len(protected_quotes)}__'
+        protected_quotes[placeholder] = match.group(0)
+        return placeholder
+    
+    # Protect quoted text
+    text = re.sub(quote_pattern, protect_quotes, text)
+    
+    # Split by Uyghur punctuation marks
+    sentences = re.split(r'([.!؟؛])', text)
+    
+    # Rejoin sentences with their punctuation marks
+    result = []
+    for i in range(0, len(sentences)-1, 2):
+        if i+1 < len(sentences):
+            result.append(sentences[i] + sentences[i+1])
+    if len(sentences) % 2 == 1:
+        result.append(sentences[-1])
+    
+    # Restore protected quotes
+    restored = []
+    for sentence in result:
+        for placeholder, quote in protected_quotes.items():
+            sentence = sentence.replace(placeholder, quote)
+        if sentence.strip():
+            restored.append(sentence.strip())
+    
+    return restored
+
+
+splitter_fn = {JP_CODE: split_jp, ZH_CODE: split_zh, HY_CODE: split_hy, UG_CODE: split_ug}
 
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
