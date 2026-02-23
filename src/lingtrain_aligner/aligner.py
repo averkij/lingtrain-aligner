@@ -250,7 +250,9 @@ def process_batch(
 ):
     """Do the actual alignment process logic"""
     # try:
-    logging.info(f"Batch {batch_number}. Calculating vectors.")
+    import time as _time
+    _batch_start = _time.monotonic()
+    logging.info(f"Batch {batch_number}. Calculating vectors. store_embeddings={store_embeddings}.")
 
     # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
     # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
@@ -333,6 +335,10 @@ def process_batch(
 
         texts_from.append((f"[{id_from+1}]", id_from + 1, text_from.strip()))
         texts_to.append((f"[{id_to+1}]", id_to + 1, text_to.strip()))
+
+    _elapsed = _time.monotonic() - _batch_start
+    _mins, _secs = divmod(int(_elapsed), 60)
+    logging.info(f"Batch {batch_number}. Finished. Time: {_mins}m {_secs}s.")
 
     return texts_from, texts_to
 
