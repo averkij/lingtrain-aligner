@@ -5,7 +5,7 @@
 
 **Lingtrain Aligner** is a powerful, ML-powered library for accurately aligning texts in different languages. It's designed to build parallel corpora from two or more raw texts, even when they have different structures.
 
-<img src="img/title_image.png" width="640"/>
+<img src="img/title_image.png" width="440"/>
 
 ## Key Features
 
@@ -110,27 +110,6 @@ To get started with Lingtrain Aligner, install the library from PyPI:
 pip install lingtrain-aligner
 ```
 
-## Usage
-
-Here's a simple example of how to align two texts:
-
-```python
-from lingtrain_aligner.aligner import Aligner
-
-# Initialize the Aligner with the desired model
-aligner = Aligner(model_name="distiluse-base-multilingual-cased-v2")
-
-# Load your texts
-original_text = "path/to/your/original/text.txt"
-translated_text = "path/to/your/translated/text.txt"
-
-# Align the texts
-aligned_texts = aligner.align(original_text, translated_text)
-
-# Save the aligned texts
-aligner.save_aligned_texts("aligned_original.txt", "aligned_translated.txt")
-```
-
 ## Supported Models
 
 Lingtrain Aligner supports several multilingual models, each with its own strengths:
@@ -160,6 +139,15 @@ The result is a high-quality parallel corpus suitable for machine translation re
 ## Contributing
 
 Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue on the [GitHub repository](https://github.com/averkij/lingtrain-aligner).
+
+## ⚡ Articles
+
+-  👅 [Язык твой — друг твой. Развиваем малые языки](https://habr.com/ru/articles/791188/)
+-  🔥 [Lingtrain Studio. Книги для всех, даром](https://habr.com/ru/company/ods/blog/669990/)
+-  🧩 [How to create bilingual books. Part 2. Lingtrain Alignment Studio](https://medium.com/@averoo/how-to-create-bilingual-books-part-2-lingtrain-alignment-studio-ffa56c9c07a6)
+-  📘 [How to make a parallel texts for language learning. Part 1. Python and Colab version](https://medium.com/@averoo/how-to-make-a-parallel-book-for-language-learning-part-1-python-and-colab-version-cff09e379d8c)
+-  🔮 [Lingtrain Aligner. Приложение для создания параллельных книг, которое вас удивит](https://habr.com/ru/post/564944/)
+-  📌 [Сам себе Гутенберг. Делаем параллельные книги](https://habr.com/ru/post/557664/)
 
 
 ## License
