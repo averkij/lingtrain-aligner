@@ -221,6 +221,12 @@ def update_embeddings(
 
         return embeddings
 
+    # Nothing to update — return existing embeddings from DB or empty list
+    if store_embeddings:
+        existing = helper.get_embeddings(db_path, direction, ids, is_proxy)
+        return [x[1] for x in existing]
+    return []
+
 
 def process_batch(
     db_path,
@@ -247,51 +253,63 @@ def process_batch(
     lang_emb_to="ell_Grek",
     store_embeddings=False,
     use_api=False,
+    embedding_cache=None,
+    api = None,
+    model_api = None
 ):
     """Do the actual alignment process logic"""
     # try:
     logging.info(f"Batch {batch_number}. Calculating vectors.")
 
-    # vectors1 = [*get_line_vectors(clean_lines(lines_from_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
-    # vectors2 = [*get_line_vectors(clean_lines(lines_to_batch), model_name, embed_batch_size, normalize_embeddings, show_progress_bar)]
+    if embedding_cache is not None:
+        vectors1, vectors2 = _process_batch_with_cache(
+            db_path, line_ids_from, line_ids_to, lines_from_batch, lines_to_batch,
+            use_proxy_from, use_proxy_to, model_name, embed_batch_size,
+            normalize_embeddings, show_progress_bar, model,
+            lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
+        )
+    else:
+        vectors1 = update_embeddings(
+            db_path,
+            direction="from",
+            ids=line_ids_from,
+            is_proxy=use_proxy_from,
+            model_name=model_name,
+            embed_batch_size=embed_batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+            model=model,
+            lang_emb_from=lang_emb_from,
+            store_embeddings=store_embeddings,
+            use_api=use_api,
+            api=api,
+            model_api=model_api,
+        )
 
-    vectors1 = update_embeddings(
-        db_path,
-        direction="from",
-        ids=line_ids_from,
-        is_proxy=use_proxy_from,
-        model_name=model_name,
-        embed_batch_size=embed_batch_size,
-        normalize_embeddings=normalize_embeddings,
-        show_progress_bar=show_progress_bar,
-        model=model,
-        lang_emb_from=lang_emb_from,
-        store_embeddings=store_embeddings,
-        use_api=use_api,
-    )
-    
-    vectors2 = update_embeddings(
-        db_path,
-        direction="to",
-        ids=line_ids_to,
-        is_proxy=use_proxy_to,
-        model_name=model_name,
-        embed_batch_size=embed_batch_size,
-        normalize_embeddings=normalize_embeddings,
-        show_progress_bar=show_progress_bar,
-        model=model,
-        lang_emb_from=lang_emb_to,
-        store_embeddings=store_embeddings,
-        use_api=use_api,
-    )
+        vectors2 = update_embeddings(
+            db_path,
+            direction="to",
+            ids=line_ids_to,
+            is_proxy=use_proxy_to,
+            model_name=model_name,
+            embed_batch_size=embed_batch_size,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
+            model=model,
+            lang_emb_from=lang_emb_to,
+            store_embeddings=store_embeddings,
+            use_api=use_api,
+            api=api,
+            model_api=model_api,
+        )
 
-    if store_embeddings:
-        print("Get embeddings from the database")
-        vectors1 = helper.get_embeddings(db_path, "from", line_ids_from, use_proxy_from)
-        vectors1 = [x[1] for x in vectors1]
+        if store_embeddings:
+            print("Get embeddings from the database")
+            vectors1 = helper.get_embeddings(db_path, "from", line_ids_from, use_proxy_from)
+            vectors1 = [x[1] for x in vectors1]
 
-        vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
-        vectors2 = [x[1] for x in vectors2]
+            vectors2 = helper.get_embeddings(db_path, "to", line_ids_to, use_proxy_to)
+            vectors2 = [x[1] for x in vectors2]
 
     logging.debug(
         f"Batch {batch_number}. Vectors calculated. len(vectors1)={len(vectors1)}. len(vectors2)={len(vectors2)}."
@@ -512,6 +530,7 @@ def align_db(
 
     print("tasks amount:", len(task_list))
 
+    embedding_cache = {"from": {}, "to": {}}
     count = 0
     for (
         lines_from_batch,
@@ -548,6 +567,7 @@ def align_db(
             lang_emb_to=lang_emb_to,
             store_embeddings=store_embeddings,
             use_api=use_api,
+            embedding_cache=embedding_cache,
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
@@ -852,8 +872,88 @@ def get_batch_intersected_for_segments_list(
     return res
 
 
-def get_sim_matrix(vec1, vec2, window):
-    """Calculate similarity matrix"""
+def _compute_embeddings_for_ids(
+    db_path, direction, ids, lines, is_proxy, model_name, embed_batch_size,
+    normalize_embeddings, show_progress_bar, model, lang_emb, store_embeddings, use_api,
+):
+    """Compute embeddings for a subset of IDs and return as a dict {id: embedding}."""
+    if not ids:
+        return {}
+    # Get corresponding lines for the ids we need to compute
+    if direction == "from":
+        rows = helper.get_splitted_from_by_id(db_path, ids)
+    else:
+        rows = helper.get_splitted_to_by_id(db_path, ids)
+
+    if not is_proxy:
+        texts = [x[1] for x in rows]
+    else:
+        texts = [x[2] for x in rows]
+    row_ids = [x[0] for x in rows]
+
+    if not use_api:
+        embeddings = list(
+            get_line_vectors(
+                texts, model_name, embed_batch_size,
+                normalize_embeddings, show_progress_bar, model, lang_emb,
+            )
+        )
+    else:
+        n = random.randint(0, 100000)
+        tasks_path = db_path.replace(".db", f"_emb_tasks_{n}.jsonl")
+        result_path = db_path.replace(".db", f"_emb_result_{n}.jsonl")
+        embeddings = get_line_vectors_by_api(
+            texts, row_ids, tasks_path, result_path, "openai", "text-embedding-3-small"
+        )
+
+    if store_embeddings:
+        helper.set_embeddings(db_path, direction, row_ids, embeddings, is_proxy)
+
+    return dict(zip(row_ids, embeddings))
+
+
+def _process_batch_with_cache(
+    db_path, line_ids_from, line_ids_to, lines_from_batch, lines_to_batch,
+    use_proxy_from, use_proxy_to, model_name, embed_batch_size,
+    normalize_embeddings, show_progress_bar, model,
+    lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
+):
+    """Process a batch using the in-memory embedding cache to skip redundant computation."""
+    cache_from = embedding_cache["from"]
+    cache_to = embedding_cache["to"]
+
+    # Find which IDs are missing from the cache
+    missing_from = [lid for lid in line_ids_from if lid not in cache_from]
+    missing_to = [lid for lid in line_ids_to if lid not in cache_to]
+
+    # Compute only the missing embeddings
+    if missing_from:
+        new_from = _compute_embeddings_for_ids(
+            db_path, "from", missing_from, lines_from_batch, use_proxy_from,
+            model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
+            model, lang_emb_from, store_embeddings, use_api,
+        )
+        cache_from.update(new_from)
+
+    if missing_to:
+        new_to = _compute_embeddings_for_ids(
+            db_path, "to", missing_to, lines_to_batch, use_proxy_to,
+            model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
+            model, lang_emb_to, store_embeddings, use_api,
+        )
+        cache_to.update(new_to)
+
+    # Assemble vectors in correct order from cache.
+    # Some IDs may not exist in DB (0-based line_ids vs 1-based DB IDs),
+    # matching the original update_embeddings behavior that silently skips them.
+    vectors1 = [cache_from[lid] for lid in line_ids_from if lid in cache_from]
+    vectors2 = [cache_to[lid] for lid in line_ids_to if lid in cache_to]
+
+    return vectors1, vectors2
+
+
+def _get_sim_matrix_reference(vec1, vec2, window):
+    """Original (slow) similarity matrix implementation kept for testing."""
     sim_matrix = np.zeros((len(vec1), len(vec2)))
     k = len(vec1) / len(vec2)
     for i, vector1 in enumerate(vec1):
@@ -861,6 +961,34 @@ def get_sim_matrix(vec1, vec2, window):
             if (j * k > i - window) & (j * k < i + window):
                 sim = 1 - spatial.distance.cosine(vector1, vector2)
                 sim_matrix[i, j] = max(sim, 0.01)
+    return sim_matrix
+
+
+def get_sim_matrix(vec1, vec2, window):
+    """Calculate similarity matrix (vectorized)"""
+    vec1 = np.asarray(vec1, dtype=np.float64)
+    vec2 = np.asarray(vec2, dtype=np.float64)
+
+    # Normalize rows
+    norms1 = np.linalg.norm(vec1, axis=1, keepdims=True)
+    norms2 = np.linalg.norm(vec2, axis=1, keepdims=True)
+    norms1 = np.where(norms1 == 0, 1, norms1)
+    norms2 = np.where(norms2 == 0, 1, norms2)
+    normed1 = vec1 / norms1
+    normed2 = vec2 / norms2
+
+    # Cosine similarity via single BLAS matmul
+    sim_matrix = normed1 @ normed2.T
+
+    # Build window mask: j * k > i - window and j * k < i + window
+    k = len(vec1) / len(vec2)
+    i_indices = np.arange(len(vec1))[:, None]  # (N, 1)
+    j_indices = np.arange(len(vec2))[None, :]  # (1, M)
+    jk = j_indices * k
+    mask = (jk > i_indices - window) & (jk < i_indices + window)
+
+    # Apply mask and floor
+    sim_matrix = np.where(mask, np.maximum(sim_matrix, 0.01), 0.0)
     return sim_matrix
 
 

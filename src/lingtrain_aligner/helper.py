@@ -7,6 +7,21 @@ from lingtrain_aligner import constants as con
 import numpy as np
 
 
+def _embedding_to_blob(vec):
+    """Serialize a numpy array to a float32 binary blob."""
+    return np.asarray(vec, dtype=np.float32).tobytes()
+
+
+def _blob_to_embedding(blob):
+    """Deserialize a binary blob back to a numpy float32 array."""
+    return np.frombuffer(blob, dtype=np.float32).copy()
+
+
+def _is_json_embedding(data):
+    """Check whether stored embedding data is JSON text (legacy) vs binary blob."""
+    return isinstance(data, str)
+
+
 def create_table_splitted(db, direction):
     """Create tables for splitted lines. Created separately because PK is not needed anymore.
     Tables are recreated while using split confinct feature."""
@@ -16,17 +31,17 @@ def create_table_splitted(db, direction):
             create table splitted_from(
                 id integer,
                 text text,
-                proxy_text text, 
+                proxy_text text,
                 exclude integer,
                 paragraph integer,
                 h1 integer,
-                h2 integer, 
+                h2 integer,
                 h3 integer,
                 h4 integer,
                 h5 integer,
                 divider int,
-                embedding text,
-                proxy_embedding text
+                embedding blob,
+                proxy_embedding blob
             )
         """
         )
@@ -38,15 +53,15 @@ def create_table_splitted(db, direction):
                 text text,
                 proxy_text text,
                 exclude integer,
-                paragraph integer, 
+                paragraph integer,
                 h1 integer,
                 h2 integer,
                 h3 integer,
                 h4 integer,
                 h5 integer,
                 divider int,
-                embedding text,
-                proxy_embedding text
+                embedding blob,
+                proxy_embedding blob
             )
         """
         )
@@ -115,29 +130,28 @@ def get_splitted_ids_without_embeddings(
 
 
 def set_embeddings(db_path, direction, line_ids=[], embeddings=[], is_proxy=False):
-    """Fill embeddings in splitted table"""
+    """Fill embeddings in splitted table as binary blobs"""
     if direction == "from":
         table_name = "splitted_from"
     else:
         table_name = "splitted_to"
 
-    # if embeddings are numpy arrays, convert them to lists, if not, leave them as they are
-    embeddings = [x.tolist() if isinstance(x, np.ndarray) else x for x in embeddings]
+    blobs = [_embedding_to_blob(x) for x in embeddings]
     with sqlite3.connect(db_path) as db:
         if is_proxy:
             db.executemany(
                 f"update {table_name} set proxy_embedding=? where id=?",
-                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)],
+                [(blob, lid) for blob, lid in zip(blobs, line_ids)],
             )
         else:
             db.executemany(
                 f"update {table_name} set embedding=? where id=?",
-                [(json.dumps(x), y) for x, y in zip(embeddings, line_ids)],
+                [(blob, lid) for blob, lid in zip(blobs, line_ids)],
             )
 
 
 def get_embeddings(db_path, direction, line_ids=[], is_proxy=False):
-    """Get embeddings from splitted table"""
+    """Get embeddings from splitted table (auto-detects JSON legacy vs binary blob)"""
     if direction == "from":
         table_name = "splitted_from"
     else:
@@ -152,11 +166,14 @@ def get_embeddings(db_path, direction, line_ids=[], is_proxy=False):
                 f"select s.id, s.embedding from {table_name} s where s.id in ({','.join([str(x) for x in line_ids])})"
             ).fetchall()
 
-    res = [
-        (x[0], np.array(json.loads(x[1])) if x[1] is not None else None) for x in res
-    ]
+    def _parse_embedding(data):
+        if data is None:
+            return None
+        if _is_json_embedding(data):
+            return np.array(json.loads(data))
+        return _blob_to_embedding(data)
 
-    return res
+    return [(x[0], _parse_embedding(x[1])) for x in res]
 
 
 def get_doc_index_original(db_path):
