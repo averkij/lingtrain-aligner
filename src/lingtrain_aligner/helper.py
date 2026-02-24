@@ -41,7 +41,9 @@ def create_table_splitted(db, direction):
                 h5 integer,
                 divider int,
                 embedding blob,
-                proxy_embedding blob
+                proxy_embedding blob,
+                model text,
+                inference text
             )
         """
         )
@@ -61,7 +63,9 @@ def create_table_splitted(db, direction):
                 h5 integer,
                 divider int,
                 embedding blob,
-                proxy_embedding blob
+                proxy_embedding blob,
+                model text,
+                inference text
             )
         """
         )
@@ -905,6 +909,43 @@ def get_version(db_path):
     with sqlite3.connect(db_path) as db:
         res = db.execute(f"select v.version from version v").fetchone()
     return float(res[0])
+
+
+def migrate_document_db(db_path):
+    """Migrate alignment DB to the current schema version.
+
+    Safe to call on any version: checks current version before running.
+    Idempotent: will not fail if columns already exist.
+
+    Migration steps applied:
+      7.1 -> 7.2: add model TEXT and inference TEXT to splitted_from and splitted_to.
+    """
+    with sqlite3.connect(db_path) as db:
+        current_version = float(db.execute("SELECT version FROM version").fetchone()[0])
+
+        if current_version < 7.2:
+            # Add model + inference columns to splitted_from
+            cols_from = [
+                col[1]
+                for col in db.execute("PRAGMA table_info(splitted_from)").fetchall()
+            ]
+            if "model" not in cols_from:
+                db.execute("ALTER TABLE splitted_from ADD COLUMN model TEXT")
+            if "inference" not in cols_from:
+                db.execute("ALTER TABLE splitted_from ADD COLUMN inference TEXT")
+
+            # Add model + inference columns to splitted_to
+            cols_to = [
+                col[1]
+                for col in db.execute("PRAGMA table_info(splitted_to)").fetchall()
+            ]
+            if "model" not in cols_to:
+                db.execute("ALTER TABLE splitted_to ADD COLUMN model TEXT")
+            if "inference" not in cols_to:
+                db.execute("ALTER TABLE splitted_to ADD COLUMN inference TEXT")
+
+            # Bump version
+            db.execute("UPDATE version SET version = ?", ("7.2",))
 
 
 def set_name(db_path, name):
