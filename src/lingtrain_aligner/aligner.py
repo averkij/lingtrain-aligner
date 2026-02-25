@@ -89,19 +89,16 @@ def get_line_vectors_by_api(
     """
     if api == "hf-inference":
         from huggingface_hub import InferenceClient
-        client = InferenceClient(provider="hf-inference", api_key=api_key)
-        embeddings = []
-        for line_id, line in zip(line_ids, lines):
-            result = client.feature_extraction(line, model=model)
-            # result is a numpy array or list of floats
-            vec = np.array(result).flatten().tolist()
-            embeddings.append({"embedding": vec, "row_id": line_id})
-        # Sort by row_id for consistency with OpenAI path
-        embeddings = sorted(embeddings, key=lambda x: x["row_id"])
+        client = InferenceClient(api_key=api_key, provider="hf-inference")
+        # Batch call — send all texts at once
+        result = client.feature_extraction(lines, model=model)
+        vecs = np.array(result)
+        if vecs.ndim == 3:
+            # Some models return (batch, seq_len, dim); mean-pool over seq_len
+            vecs = vecs.mean(axis=1)
         # L2-normalize to match local path behavior (API-03)
-        vecs = np.array([x["embedding"] for x in embeddings])
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1, norms)  # avoid division by zero
+        norms = np.where(norms == 0, 1, norms)
         vecs = vecs / norms
         result_embeddings = vecs.tolist()
         if max_len:
@@ -223,6 +220,7 @@ def update_embeddings(
             lines = [x[2] for x in lines]
 
         if not use_api:
+            logging.debug(f"update_embeddings [{direction}]: local model={model_name}, {len(ids_to_update)} lines")
             embeddings = list(
                 get_line_vectors(
                     lines,
@@ -235,6 +233,7 @@ def update_embeddings(
                 )
             )
         else:
+            logging.debug(f"update_embeddings [{direction}]: api={api}, model={model_api}, {len(ids_to_update)} lines")
             n = random.randint(0,100000)
             tasks_path = db_path.replace(".db", f"_emb_tasks_{n}.jsonl")
             result_path = db_path.replace(".db", f"_emb_result_{n}.jsonl")
@@ -297,7 +296,8 @@ def process_batch(
     # try:
     import time as _time
     _batch_start = _time.monotonic()
-    logging.info(f"Batch {batch_number}. Calculating vectors. store_embeddings={store_embeddings}.")
+    _inf = f"api={api}, model_api={model_api}" if use_api else f"local, model_name={model_name}"
+    logging.info(f"Batch {batch_number}. Calculating vectors. inference=[{_inf}]. store_embeddings={store_embeddings}.")
 
     if embedding_cache is not None:
         vectors1, vectors2 = _process_batch_with_cache(
@@ -305,6 +305,7 @@ def process_batch(
             use_proxy_from, use_proxy_to, model_name, embed_batch_size,
             normalize_embeddings, show_progress_bar, model,
             lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
+            api=api, model_api=model_api, api_key=api_key,
         )
     else:
         vectors1 = update_embeddings(
@@ -521,6 +522,9 @@ def align_db(
     lang_emb_to="ell_Grek",
     store_embeddings=False,
     use_api=False,
+    api=None,
+    model_api=None,
+    api_key=None,
 ):
     result = []
     if use_segments:
@@ -616,6 +620,9 @@ def align_db(
             store_embeddings=store_embeddings,
             use_api=use_api,
             embedding_cache=embedding_cache,
+            api=api,
+            model_api=model_api,
+            api_key=api_key,
         )
         result.append((batch_id, texts_from, texts_to, shift, window))
         count += 1
@@ -923,6 +930,7 @@ def get_batch_intersected_for_segments_list(
 def _compute_embeddings_for_ids(
     db_path, direction, ids, lines, is_proxy, model_name, embed_batch_size,
     normalize_embeddings, show_progress_bar, model, lang_emb, store_embeddings, use_api,
+    api=None, model_api=None, api_key=None,
 ):
     """Compute embeddings for a subset of IDs and return as a dict {id: embedding}."""
     if not ids:
@@ -951,7 +959,9 @@ def _compute_embeddings_for_ids(
         tasks_path = db_path.replace(".db", f"_emb_tasks_{n}.jsonl")
         result_path = db_path.replace(".db", f"_emb_result_{n}.jsonl")
         embeddings = get_line_vectors_by_api(
-            texts, row_ids, tasks_path, result_path, "openai", "text-embedding-3-small"
+            texts, row_ids, tasks_path, result_path,
+            api or "openai", model_api or "text-embedding-3-small",
+            api_key=api_key,
         )
 
     if store_embeddings:
@@ -965,6 +975,7 @@ def _process_batch_with_cache(
     use_proxy_from, use_proxy_to, model_name, embed_batch_size,
     normalize_embeddings, show_progress_bar, model,
     lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
+    api=None, model_api=None, api_key=None,
 ):
     """Process a batch using the in-memory embedding cache to skip redundant computation."""
     cache_from = embedding_cache["from"]
@@ -980,6 +991,7 @@ def _process_batch_with_cache(
             db_path, "from", missing_from, lines_from_batch, use_proxy_from,
             model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
             model, lang_emb_from, store_embeddings, use_api,
+            api=api, model_api=model_api, api_key=api_key,
         )
         cache_from.update(new_from)
 
@@ -988,6 +1000,7 @@ def _process_batch_with_cache(
             db_path, "to", missing_to, lines_to_batch, use_proxy_to,
             model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
             model, lang_emb_to, store_embeddings, use_api,
+            api=api, model_api=model_api, api_key=api_key,
         )
         cache_to.update(new_to)
 
