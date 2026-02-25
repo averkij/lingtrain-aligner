@@ -66,77 +66,102 @@ def get_line_vectors_by_api(
     model="text-embedding-3-small",
     remove_after=False,
     max_len=None,
+    api_key=None,
 ):
-    """Calculate embeddings of the strings using API"""
-    # make tasks
-    jobs = [
-        {"model": model, "input": line, "metadata": {"row_id": id}} for id, line in zip(line_ids, lines)
-    ]
-    with open(tasks_path, "w", encoding="utf8") as f:
-        for job in jobs:
-            json_string = json.dumps(job, ensure_ascii=False)
-            f.write(json_string + "\n")
-    
-    #run api_request_parallel_processor.py
-    #Example command to call script:
-    #```
-    #python examples/api_request_parallel_processor.py \
-    #--requests_filepath examples/data/example_requests_to_parallel_process.jsonl \
-    #--save_filepath examples/data/example_requests_to_parallel_process_results.jsonl \
-    #--request_url https://api.openai.com/v1/embeddings \
-    #--max_requests_per_minute 1500 \
-    #--max_tokens_per_minute 6250000 \
-    #--token_encoding_name cl100k_base \
-    #--max_attempts 5 \
-    #--logging_level 20
-    #```
+    """Calculate embeddings of the strings using API.
 
-    if not os.path.exists(tasks_path):
-        raise FileNotFoundError(f"Tasks file {tasks_path} does not exist")
-    
-    print("Starting to process embeddings using API")
+    Supported providers:
+    - "hf-inference": HuggingFace Inference API via huggingface_hub.InferenceClient.
+      Direct synchronous Python call — does NOT use the OpenAI parallel processor subprocess.
+      Embeddings are L2-normalized to match local path behavior.
+    - "openai": OpenAI Embeddings API via api_request_parallel_processor.py subprocess.
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    api_processor_path = os.path.join(current_dir, "api_request_parallel_processor.py")
-    command = [
-        "python",
-        api_processor_path,
-        "--requests_filepath", tasks_path,
-        "--save_filepath", result_path,
-        "--request_url", "https://api.openai.com/v1/embeddings",
-        "--max_requests_per_minute", "1500",
-        "--max_tokens_per_minute", "6250000",
-        "--token_encoding_name", "cl100k_base",
-        "--max_attempts", "5",
-        "--logging_level", "10"
-    ]
-    # print("Running the following command: ", " ".join(command))
-    subprocess.run(command, check=True)
+    Args:
+        lines: list of text strings to embed
+        line_ids: list of integer row IDs (1-to-1 with lines)
+        tasks_path: path for JSONL task file (OpenAI path only)
+        result_path: path for JSONL result file (OpenAI path only)
+        api: provider name — "hf-inference" or "openai"
+        model: model identifier for the provider
+        remove_after: whether to remove task/result files after (OpenAI path only)
+        max_len: if set, truncate result to this length
+        api_key: API key for the provider (passed in by caller; not read from env here)
+    """
+    if api == "hf-inference":
+        from huggingface_hub import InferenceClient
+        client = InferenceClient(provider="hf-inference", api_key=api_key)
+        embeddings = []
+        for line_id, line in zip(line_ids, lines):
+            result = client.feature_extraction(line, model=model)
+            # result is a numpy array or list of floats
+            vec = np.array(result).flatten().tolist()
+            embeddings.append({"embedding": vec, "row_id": line_id})
+        # Sort by row_id for consistency with OpenAI path
+        embeddings = sorted(embeddings, key=lambda x: x["row_id"])
+        # L2-normalize to match local path behavior (API-03)
+        vecs = np.array([x["embedding"] for x in embeddings])
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)  # avoid division by zero
+        vecs = vecs / norms
+        result_embeddings = vecs.tolist()
+        if max_len:
+            return result_embeddings[:max_len]
+        return result_embeddings
+    elif api == "openai":
+        # make tasks
+        jobs = [
+            {"model": model, "input": line, "metadata": {"row_id": id}} for id, line in zip(line_ids, lines)
+        ]
+        with open(tasks_path, "w", encoding="utf8") as f:
+            for job in jobs:
+                json_string = json.dumps(job, ensure_ascii=False)
+                f.write(json_string + "\n")
 
-    # read result from file
-    embeddings = []
-    with open(result_path, "r", encoding="utf8") as f:
-        for line in f:
-            result = json.loads(line)
-            #line = [{"model": "text-embedding-3-small", "input": "The other, a broad-shouldered young man with tousled reddish hair, his checkered cap cocked back on his head, was wearing a cowboy shirt, wrinkled white trousers and black sneakers."}, {"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [ 0.008154794, -0.015893724]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 42, "total_tokens": 42}}, {"row_id": 4}]
-            embeddings.append({"embedding": result[1]["data"][0]["embedding"], "row_id": result[2]["row_id"]})
+        if not os.path.exists(tasks_path):
+            raise FileNotFoundError(f"Tasks file {tasks_path} does not exist")
 
-    #sort array by row_id
-    embeddings = sorted(embeddings, key=lambda x: x["row_id"])
+        print("Starting to process embeddings using API")
 
-    if remove_after:
-        try:
-            os.remove(tasks_path)
-            os.remove(result_path)
-        except:
-            pass
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        api_processor_path = os.path.join(current_dir, "api_request_parallel_processor.py")
+        command = [
+            "python",
+            api_processor_path,
+            "--requests_filepath", tasks_path,
+            "--save_filepath", result_path,
+            "--request_url", "https://api.openai.com/v1/embeddings",
+            "--max_requests_per_minute", "1500",
+            "--max_tokens_per_minute", "6250000",
+            "--token_encoding_name", "cl100k_base",
+            "--max_attempts", "5",
+            "--logging_level", "10"
+        ]
+        subprocess.run(command, check=True)
 
-    if max_len:
-        return embeddings[:max_len]
-    
-    embeddings = [x["embedding"] for x in embeddings]
+        # read result from file
+        embeddings = []
+        with open(result_path, "r", encoding="utf8") as f:
+            for line in f:
+                result = json.loads(line)
+                embeddings.append({"embedding": result[1]["data"][0]["embedding"], "row_id": result[2]["row_id"]})
 
-    return embeddings
+        # sort array by row_id
+        embeddings = sorted(embeddings, key=lambda x: x["row_id"])
+
+        if remove_after:
+            try:
+                os.remove(tasks_path)
+                os.remove(result_path)
+            except Exception:
+                pass
+
+        if max_len:
+            return embeddings[:max_len]
+
+        embeddings = [x["embedding"] for x in embeddings]
+        return embeddings
+    else:
+        raise ValueError(f"Unknown API provider: {api}")
 
 
 def normalize_l2(x):
@@ -170,6 +195,7 @@ def update_embeddings(
     use_api=False,
     api="openai",
     model_api="text-embedding-3-small",
+    api_key=None,
     force=False,
     store_embeddings=False,
     provenance_model=None,
@@ -213,7 +239,8 @@ def update_embeddings(
             tasks_path = db_path.replace(".db", f"_emb_tasks_{n}.jsonl")
             result_path = db_path.replace(".db", f"_emb_result_{n}.jsonl")
             embeddings = get_line_vectors_by_api(
-                lines, ids_to_update, tasks_path, result_path, api, model_api
+                lines, ids_to_update, tasks_path, result_path, api, model_api,
+                api_key=api_key,
             )
 
         if store_embeddings:
@@ -260,8 +287,9 @@ def process_batch(
     store_embeddings=False,
     use_api=False,
     embedding_cache=None,
-    api = None,
-    model_api = None,
+    api=None,
+    model_api=None,
+    api_key=None,
     provenance_model=None,
     provenance_inference=None,
 ):
@@ -294,6 +322,7 @@ def process_batch(
             use_api=use_api,
             api=api,
             model_api=model_api,
+            api_key=api_key,
             provenance_model=provenance_model,
             provenance_inference=provenance_inference,
         )
@@ -313,6 +342,7 @@ def process_batch(
             use_api=use_api,
             api=api,
             model_api=model_api,
+            api_key=api_key,
             provenance_model=provenance_model,
             provenance_inference=provenance_inference,
         )
