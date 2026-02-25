@@ -948,6 +948,35 @@ def migrate_document_db(db_path):
             db.execute("UPDATE version SET version = ?", ("7.2",))
 
 
+def set_provenance(db_path, direction, line_ids, model_name, inference_type):
+    """Write model name and inference type onto splitted rows (DB >= 7.2 required)."""
+    if not line_ids:
+        return
+    if direction == "from":
+        table_name = "splitted_from"
+    else:
+        table_name = "splitted_to"
+    with sqlite3.connect(db_path) as db:
+        db.executemany(
+            f"UPDATE {table_name} SET model=?, inference=? WHERE id=?",
+            [(model_name, inference_type, lid) for lid in line_ids],
+        )
+
+
+def check_model_mismatch(db_path, expected_model):
+    """Raise ValueError if DB already contains embeddings from a different model."""
+    with sqlite3.connect(db_path) as db:
+        row = db.execute(
+            "SELECT model FROM splitted_from WHERE model IS NOT NULL LIMIT 1"
+        ).fetchone()
+    if row is not None and row[0] != expected_model:
+        raise ValueError(
+            f"Model mismatch: DB contains embeddings from '{row[0]}', "
+            f"but resolver returned '{expected_model}'. "
+            f"Clear embeddings or use the same model."
+        )
+
+
 def set_name(db_path, name):
     """Update alignment name"""
     with sqlite3.connect(db_path) as db:

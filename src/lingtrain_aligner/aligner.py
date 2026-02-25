@@ -172,6 +172,8 @@ def update_embeddings(
     model_api="text-embedding-3-small",
     force=False,
     store_embeddings=False,
+    provenance_model=None,
+    provenance_inference=None,
 ):
     """Update embeddings in the database"""
     if not force or not store_embeddings:
@@ -218,6 +220,10 @@ def update_embeddings(
             helper.set_embeddings(
                 db_path, direction, ids_to_update, embeddings, is_proxy
             )
+            if provenance_model is not None and not is_proxy:
+                helper.set_provenance(
+                    db_path, direction, ids_to_update, provenance_model, provenance_inference
+                )
 
         return embeddings
 
@@ -255,7 +261,9 @@ def process_batch(
     use_api=False,
     embedding_cache=None,
     api = None,
-    model_api = None
+    model_api = None,
+    provenance_model=None,
+    provenance_inference=None,
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -286,6 +294,8 @@ def process_batch(
             use_api=use_api,
             api=api,
             model_api=model_api,
+            provenance_model=provenance_model,
+            provenance_inference=provenance_inference,
         )
 
         vectors2 = update_embeddings(
@@ -303,6 +313,8 @@ def process_batch(
             use_api=use_api,
             api=api,
             model_api=model_api,
+            provenance_model=provenance_model,
+            provenance_inference=provenance_inference,
         )
 
         if store_embeddings:
