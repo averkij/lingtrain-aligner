@@ -6,7 +6,6 @@ from collections import defaultdict
 
 import more_itertools as mit
 from lingtrain_aligner import aligner, helper
-from scipy import spatial
 from tqdm import tqdm
 import logging
 import copy
@@ -102,6 +101,10 @@ def get_good_chains(
 
         # start new chain
         else:
+            # First chain too short — save as start anchor so the gap is detected
+            if handle_start and not chains_from:
+                chains_from.append(chain_from)
+                chains_to.append(chain_to)
             chain_from = [(val_from, ix[i]["batch_id"], ix[i]["sub_id"])]
             chain_to = [(val_to, ix[i]["batch_id"], ix[i]["sub_id"])]
             curr_from = val_from
@@ -110,9 +113,14 @@ def get_good_chains(
     if len(chain_to) >= min_len:
         chains_from.append(chain_from)
         chains_to.append(chain_to)
-    elif handle_finish:
-        chains_from.append([(len_from, ix[-1]["batch_id"], ix[-1]["sub_id"])])
-        chains_to.append([(len_to, ix[-1]["batch_id"], ix[-1]["sub_id"])])
+    else:
+        # Last chain too short — save as start anchor if nothing saved yet
+        if handle_start and not chains_from:
+            chains_from.append(chain_from)
+            chains_to.append(chain_to)
+        if handle_finish:
+            chains_from.append([(len_from, ix[-1]["batch_id"], ix[-1]["sub_id"])])
+            chains_to.append([(len_to, ix[-1]["batch_id"], ix[-1]["sub_id"])])
 
     # print("handle_finish", handle_finish)
     # print("chains_from", chains_from)
@@ -237,14 +245,8 @@ def squash_conflict(
     # for key in unique_sims:
     #     print(get_string(splitted_from, key[0]), "<->", get_string(splitted_to, key[1]), "->", unique_sims[key],"\n")
 
-    max_sims, best_var_index = 0, 0
-    for i, ids in enumerate(variants_ids):
-        sum = 0
-        for id in ids:
-            sum += unique_sims[id]
-        if sum > max_sims:
-            max_sims = sum
-            best_var_index = i
+    variant_sims = [sum(unique_sims[id] for id in ids) for ids in variants_ids]
+    best_var_index = int(np.argmax(variant_sims))
 
     if show_logs:
         print("best variant:")
@@ -611,32 +613,25 @@ def get_vectors(
         embeddings_from, embeddings_to = [], []
         sent_lens_from, sent_lens_to = [], []
 
+        # Batch: collect all needed IDs across variants, query once per direction
+        all_from_ids = set()
+        all_to_ids = set()
+        for line_ids in unique_variants:
+            all_from_ids.update(line_ids[0])
+            all_to_ids.update(line_ids[1])
+
+        all_emb_from = dict(helper.get_embeddings(
+            db_path, direction="from", line_ids=list(all_from_ids), is_proxy=use_proxy_from
+        ))
+        all_emb_to = dict(helper.get_embeddings(
+            db_path, direction="to", line_ids=list(all_to_ids), is_proxy=use_proxy_to
+        ))
+
         for line_ids in unique_variants:
             sent_lens_from.append(helper.get_string_lens(splitted_from, line_ids[0]))
             sent_lens_to.append(helper.get_string_lens(splitted_to, line_ids[1]))
-
-            embeddings_from.append(
-                [
-                    embedding
-                    for _, embedding in helper.get_embeddings(
-                        db_path,
-                        direction="from",
-                        line_ids=line_ids[0],
-                        is_proxy=use_proxy_from,
-                    )
-                ]
-            )
-            embeddings_to.append(
-                [
-                    embedding
-                    for _, embedding in helper.get_embeddings(
-                        db_path,
-                        direction="to",
-                        line_ids=line_ids[1],
-                        is_proxy=use_proxy_to,
-                    )
-                ]
-            )
+            embeddings_from.append([all_emb_from[id] for id in line_ids[0]])
+            embeddings_to.append([all_emb_to[id] for id in line_ids[1]])
 
         # print("embeddings_from", len(embeddings_from), [len(x) for x in embeddings_from])
         # print("embeddings_to", len(embeddings_to), [len(x) for x in embeddings_to])
@@ -654,11 +649,14 @@ def get_vectors(
 
 
 def get_unique_sims(unique_variants, vecs_from, vecs_to):
-    """Calculate unique similarities"""
-    res = dict()
-    for i, x in enumerate(unique_variants):
-        res[x] = 1 - spatial.distance.cosine(vecs_from[i], vecs_to[i])
-    return res
+    """Calculate unique similarities (vectorized cosine similarity)"""
+    vf = np.array(vecs_from)
+    vt = np.array(vecs_to)
+    dots = np.sum(vf * vt, axis=1)
+    norms = np.linalg.norm(vf, axis=1) * np.linalg.norm(vt, axis=1)
+    norms = np.where(norms < 1e-10, 1.0, norms)
+    sims = dots / norms
+    return {x: sims[i] for i, x in enumerate(unique_variants)}
 
 
 def aggregate_embeddings(embeddings, sentence_lengths, method, **kwargs):
@@ -683,7 +681,7 @@ def aggregate_embeddings(embeddings, sentence_lengths, method, **kwargs):
     np.ndarray
         The aggregated embedding of shape (embedding_dim,).
     """
-    if not embeddings:
+    if len(embeddings) == 0:
         raise ValueError("No embeddings provided.")
     if method not in {
         "weighted_average",
@@ -704,8 +702,6 @@ def aggregate_embeddings(embeddings, sentence_lengths, method, **kwargs):
         raise ValueError("Embeddings must be 2-dimensional (n_sentences x embedding_dim).")
     if len(sentence_lengths) != embeddings.shape[0]:
         raise ValueError("sentence_lengths must match the number of embeddings.")
-
-    method = method.lower()
 
     if method == "weighted_average":
         # Weighted by sentence length, then average
@@ -730,7 +726,7 @@ def aggregate_embeddings(embeddings, sentence_lengths, method, **kwargs):
 
     # Normalize the final embedding
     norm = np.linalg.norm(aggregated_embedding)
-    if norm == 0:
+    if norm < 1e-10:
         raise ValueError("Norm of aggregated embedding is zero.")
 
     return aggregated_embedding / norm

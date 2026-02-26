@@ -396,13 +396,13 @@ def score_variants_by_similarity(
     res = []
     for variant in variants:
         score = 0
+        if aggregate_embeddings:
+            # get embeddings from db and aggregate (once per variant)
+            embeddings_dict = get_embeddings_dict_from_splitted(
+                db_path, variant, is_proxy=is_proxy
+            )
         for pair in variant:
             if aggregate_embeddings:
-                # get embeddings from db and aggregate
-                embeddings_dict = get_embeddings_dict_from_splitted(
-                    db_path, variant, is_proxy=is_proxy
-                )
-
                 lens_from = [len(x[1]) for x in pair[0]]
                 lens_to = [len(x[1]) for x in pair[1]]
 
