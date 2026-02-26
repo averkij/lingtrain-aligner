@@ -388,3 +388,96 @@ class TestEmbeddingCacheEliminatesRedundantComputation:
             index2 = helper.get_doc_index_original(db2)
 
             assert index1 == index2, "Doc index must be identical with and without cache"
+
+
+# ---------------------------------------------------------------------------
+# 7. test_aggregate_embeddings — unit tests for aggregation fixes
+# ---------------------------------------------------------------------------
+
+class TestAggregateEmbeddings:
+    """Tests for aggregate_embeddings correctness fixes."""
+
+    def test_weighted_average_basic(self):
+        from lingtrain_aligner.resolver import aggregate_embeddings
+
+        emb = np.array([[1.0, 0.0], [0.0, 1.0]])
+        lens = np.array([3, 1])
+        result = aggregate_embeddings(emb, lens, "weighted_average")
+        assert result.shape == (2,)
+        assert np.linalg.norm(result) == pytest.approx(1.0, abs=1e-7)
+
+    def test_all_methods_return_normalized(self):
+        from lingtrain_aligner.resolver import aggregate_embeddings
+
+        rng = np.random.RandomState(99)
+        emb = rng.randn(5, 64)
+        lens = np.array([10, 20, 15, 5, 30])
+        for method in ["weighted_average", "length_scaling", "max_pooling", "logarithmic_scaling"]:
+            result = aggregate_embeddings(emb, lens, method)
+            assert np.linalg.norm(result) == pytest.approx(1.0, abs=1e-7), f"{method} not normalized"
+
+    def test_invalid_method_rejected(self):
+        from lingtrain_aligner.resolver import aggregate_embeddings
+
+        emb = np.array([[1.0, 0.0]])
+        lens = np.array([1])
+        with pytest.raises(ValueError, match="Unknown method"):
+            aggregate_embeddings(emb, lens, "invalid_method")
+
+    def test_near_zero_norm_raises(self):
+        from lingtrain_aligner.resolver import aggregate_embeddings
+
+        emb = np.array([[0.0, 0.0], [0.0, 0.0]])
+        lens = np.array([1, 1])
+        with pytest.raises(ValueError, match="zero"):
+            aggregate_embeddings(emb, lens, "weighted_average")
+
+    def test_empty_embeddings_raises(self):
+        from lingtrain_aligner.resolver import aggregate_embeddings
+
+        with pytest.raises(ValueError, match="No embeddings"):
+            aggregate_embeddings([], [1], "weighted_average")
+
+
+# ---------------------------------------------------------------------------
+# 8. test_get_unique_sims — vectorized cosine similarity
+# ---------------------------------------------------------------------------
+
+class TestGetUniqueSims:
+    """Tests for vectorized get_unique_sims."""
+
+    def test_matches_scipy_cosine(self):
+        from scipy import spatial
+        from lingtrain_aligner.resolver import get_unique_sims
+
+        rng = np.random.RandomState(42)
+        n = 10
+        dim = 64
+        vf = rng.randn(n, dim)
+        vt = rng.randn(n, dim)
+        # Normalize to match typical embedding inputs
+        vf = vf / np.linalg.norm(vf, axis=1, keepdims=True)
+        vt = vt / np.linalg.norm(vt, axis=1, keepdims=True)
+
+        variants = [((i,), (i + 100,)) for i in range(n)]
+        result = get_unique_sims(variants, vf, vt)
+
+        for i, v in enumerate(variants):
+            expected = 1 - spatial.distance.cosine(vf[i], vt[i])
+            assert result[v] == pytest.approx(expected, abs=1e-6)
+
+    def test_non_normalized_vectors(self):
+        from scipy import spatial
+        from lingtrain_aligner.resolver import get_unique_sims
+
+        rng = np.random.RandomState(7)
+        n = 5
+        vf = rng.randn(n, 32) * 10
+        vt = rng.randn(n, 32) * 0.1
+
+        variants = [((i,), (i,)) for i in range(n)]
+        result = get_unique_sims(variants, vf, vt)
+
+        for i, v in enumerate(variants):
+            expected = 1 - spatial.distance.cosine(vf[i], vt[i])
+            assert result[v] == pytest.approx(expected, abs=1e-6)
