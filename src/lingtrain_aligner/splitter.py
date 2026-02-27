@@ -18,7 +18,7 @@ PL_CODE = "pl"
 PT_CODE = "pt"
 HU_CODE = "hu"
 CZ_CODE = "cz"
-JP_CODE = "jp"
+JP_CODE = "ja"
 BA_CODE = "ba"
 KO_CODE = "ko"
 NL_CODE = "nl"
@@ -248,7 +248,7 @@ def split_by_sentences_and_save(
             else:
                 sentences = split_by_sentences(lines, langcode, clean_text)
         else:
-            raise Exception("Unknown language code.")
+            raise Exception(f"Unknown language code: {langcode}")
 
         count = 1
         for x in sentences:
