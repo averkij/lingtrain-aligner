@@ -627,6 +627,21 @@ def get_vectors(
             db_path, direction="to", line_ids=list(all_to_ids), is_proxy=use_proxy_to
         ))
 
+        # If any embedding is missing, fall back to computing fresh embeddings
+        has_missing = (
+            any(v is None for v in all_emb_from.values())
+            or any(v is None for v in all_emb_to.values())
+        )
+        if has_missing:
+            return (
+                aligner.get_line_vectors(
+                    strings_from, model_name, model=model, lang=lang_emb_from
+                ),
+                aligner.get_line_vectors(
+                    strings_to, model_name, model=model, lang=lang_emb_to
+                ),
+            )
+
         for line_ids in unique_variants:
             sent_lens_from.append(helper.get_string_lens(splitted_from, line_ids[0]))
             sent_lens_to.append(helper.get_string_lens(splitted_to, line_ids[1]))

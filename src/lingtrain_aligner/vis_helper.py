@@ -65,6 +65,8 @@ def visualize_alignment_by_db(
 
     for i, batch in enumerate(batches):
         if i in batch_ids or len(batch_ids) == 0:
+            if not batch[0] or not batch[1]:
+                continue
             y_min, x_min = min(batch[0]), min(batch[1])
             y_max, x_max = max(batch[0]), max(batch[1])
             align_matrix = np.zeros((y_max - y_min, x_max - x_min))
