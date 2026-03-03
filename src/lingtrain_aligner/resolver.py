@@ -23,6 +23,8 @@ def prepare_index(db_path, batch_id=-1, index=None):
         for i, ix in enumerate(index[batch_id]):
             from_ids = json.loads(ix[1])
             to_ids = json.loads(ix[3])
+            if not from_ids or not to_ids:
+                continue
             for t_id in to_ids:
                 res.append(
                     {
@@ -40,6 +42,8 @@ def prepare_index(db_path, batch_id=-1, index=None):
         for ix, sub_id, batch_id in index:
             from_ids = json.loads(ix[1])
             to_ids = json.loads(ix[3])
+            if not from_ids or not to_ids:
+                continue
             for t_id in to_ids:
                 res.append(
                     {
