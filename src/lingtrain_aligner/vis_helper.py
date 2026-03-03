@@ -7,9 +7,24 @@ import os
 import numpy as np
 from lingtrain_aligner import helper
 from matplotlib import pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
+
+_COLOR_PRIMARY = "#2563eb"
+_COLOR_PRIMARY_SUBTLE = "#eff6ff"
+_COLOR_TEXT_MUTED = "#6b7280"
+_COLOR_BG_SURFACE = "#ffffff"
+_COLOR_BORDER = "#e2e8f0"
+_COLOR_ERROR = "#dc2626"
+_FONT_FAMILY = ["Arial", "sans-serif"]
+
+_CMAP_ALIGNMENT = LinearSegmentedColormap.from_list(
+    "lingtrain_blue",
+    [_COLOR_BG_SURFACE, _COLOR_PRIMARY_SUBTLE, _COLOR_PRIMARY],
+    N=256,
+)
 
 
 def visualize_alignment_by_db(
@@ -116,16 +131,23 @@ def save_pic(
     output = "{0}_{1}{2}".format(
         os.path.splitext(output_path)[0], batch_number, os.path.splitext(output_path)[1]
     )
-    my_dpi = 100
-    plt.figure(figsize=(size[0] / my_dpi, size[1] / my_dpi), dpi=my_dpi)
+
+    dpi = 150
+    fig, ax = plt.subplots(
+        figsize=(size[0] / dpi, size[1] / dpi),
+        dpi=dpi,
+    )
 
     batch_info = restore_batch_info(align_matrix)
     x = np.array(batch_info[1])
     y = np.array(batch_info[0])
 
+    # ── Alignment matrix ─────────────────────────────────────────────────
+    ax.imshow(align_matrix, cmap=_CMAP_ALIGNMENT, interpolation="nearest", aspect="auto")
+
     if show_regression:
+        mse = None
         try:
-            # plot linear regression (outlier robust)
             x_scaler, y_scaler = StandardScaler(), StandardScaler()
             x_train = x_scaler.fit_transform(x[..., None])
             y_train = y_scaler.fit_transform(y[..., None])
@@ -138,69 +160,53 @@ def save_pic(
             preds = y_scaler.inverse_transform(
                 model.predict(x_scaler.transform(x[..., None]))
             )
-            plt.plot(test_x, reg_line, c="red", linewidth=0.5)
-
+            ax.plot(test_x, reg_line, color=_COLOR_ERROR, linewidth=0.8, alpha=0.7)
             mse = mean_squared_error(preds, y)
         except Exception as e:
             logging.error(e, exc_info=True)
-
-            # plot linear regression
             coefs, res, rank, s_val, cond = np.polyfit(x, y, 1, full=True)
             m, b = coefs[0], coefs[1]
             preds = m * x + b
-            plt.plot(x, preds, c="blue", linewidth=0.5)
-
+            ax.plot(x, preds, color=_COLOR_PRIMARY, linewidth=0.8, alpha=0.7)
             mse = mean_squared_error(preds, y)
 
-    # plot alignment
-    plt.imshow(align_matrix, cmap="Greens", interpolation="nearest")
-    plt.xlabel(lang_name_to, fontsize=12, labelpad=-18)
-    plt.ylabel(lang_name_from, fontsize=12, labelpad=-18)
-    plt.tick_params(
-        axis="both",
-        which="both",
-        bottom=False,
-        top=False,
-        labelbottom=False,
-        right=False,
-        left=False,
-        labelleft=False,
-    )
+    # ── Axis labels ──────────────────────────────────────────────────────
+    label_props = dict(fontsize=8, fontfamily=_FONT_FAMILY, color=_COLOR_TEXT_MUTED)
+    ax.set_xlabel(lang_name_to, labelpad=2, **label_props)
+    ax.set_ylabel(lang_name_from, labelpad=2, **label_props)
 
-    # plot info
+    # ── Remove ticks, add subtle border ──────────────────────────────────
+    ax.tick_params(
+        axis="both", which="both",
+        bottom=False, top=False, labelbottom=False,
+        right=False, left=False, labelleft=False,
+    )
+    for spine in ax.spines.values():
+        spine.set_color(_COLOR_BORDER)
+        spine.set_linewidth(0.6)
+
+    # ── Info text below the chart ────────────────────────────────────────
     if show_info and shift is not None and window is not None:
-        if show_regression:
-            plt.text(
-                0.0,
-                -0.12,
-                f"s={shift}, w={window}, mse={mse:.2f}",
-                fontsize=8,
-                transform=plt.gca().transAxes,
-                c="black",
-            )
+        info_props = dict(fontsize=6, fontfamily=_FONT_FAMILY, color=_COLOR_TEXT_MUTED)
+        if show_regression and mse is not None:
+            ax.text(0.0, -0.10, f"s={shift}  w={window}  mse={mse:.2f}",
+                    transform=ax.transAxes, **info_props)
         else:
-            plt.text(
-                0.0,
-                -0.12,
-                f"s={shift}, w={window}",
-                fontsize=8,
-                transform=plt.gca().transAxes,
-                c="black",
-            )
-        plt.text(
-            0.0,
-            -0.20,
-            f"{lang_name_to}  {interval_x[0]} - {interval_x[1]}, {lang_name_from}  {interval_y[0]} - {interval_y[1]}",
-            fontsize=8,
-            transform=plt.gca().transAxes,
-            c="black",
+            ax.text(0.0, -0.10, f"s={shift}  w={window}",
+                    transform=ax.transAxes, **info_props)
+        ax.text(
+            0.0, -0.18,
+            f"{lang_name_to} {interval_x[0]}\u2013{interval_x[1]}  |  "
+            f"{lang_name_from} {interval_y[0]}\u2013{interval_y[1]}",
+            transform=ax.transAxes, **info_props,
         )
 
-    plt.savefig(output, dpi=my_dpi, transparent=transparent)
-    # plt.savefig(output, bbox_inches="tight", pad_inches=0, dpi=my_dpi)
+    # ── Save ─────────────────────────────────────────────────────────────
+    fig.tight_layout(pad=0.4)
+    fig.savefig(output, dpi=dpi, transparent=transparent)
     if plt_show:
         plt.show()
-    plt.close()
+    plt.close(fig)
 
 
 def restore_batch_info(m):
