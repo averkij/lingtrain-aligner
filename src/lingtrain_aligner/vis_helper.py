@@ -170,10 +170,12 @@ def save_pic(
             ax.plot(x, preds, color=_COLOR_PRIMARY, linewidth=0.8, alpha=0.7)
             mse = mean_squared_error(preds, y)
 
-    # ── Axis labels ──────────────────────────────────────────────────────
+    # ── Axis labels (inside chart) ───────────────────────────────────────
     label_props = dict(fontsize=8, fontfamily=_FONT_FAMILY, color=_COLOR_TEXT_MUTED)
-    ax.set_xlabel(lang_name_to, labelpad=2, **label_props)
-    ax.set_ylabel(lang_name_from, labelpad=2, **label_props)
+    ax.text(0.5, 0.02, lang_name_to, transform=ax.transAxes,
+            ha="center", va="bottom", **label_props)
+    ax.text(0.02, 0.5, lang_name_from, transform=ax.transAxes,
+            ha="left", va="center", rotation=90, **label_props)
 
     # ── Remove ticks, add subtle border ──────────────────────────────────
     ax.tick_params(
