@@ -57,6 +57,62 @@ def get_line_vectors(
         )
 
 
+def _openrouter_embed_chunk(lines, model, headers, url, timeout=120):
+    """Send a single batch request to OpenRouter. Returns list of embeddings or None on failure."""
+    import requests
+
+    resp = requests.post(
+        url, headers=headers,
+        json={"model": model, "input": lines},
+        timeout=timeout,
+    )
+    data = resp.json()
+    if "data" in data and len(data["data"]) == len(lines):
+        items = sorted(data["data"], key=lambda x: x["index"])
+        return [item["embedding"] for item in items]
+    error_info = data.get("error", data)
+    logging.warning(f"OpenRouter batch failed for {model} (size {len(lines)}): {error_info}")
+    return None
+
+
+def _openrouter_embed_batched(lines, model, api_key):
+    """Call OpenRouter embeddings API with tiered fallback: 300 -> 50 -> 1."""
+    url = "https://openrouter.ai/api/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    batch_tiers = [300, 50, 1]
+    all_embeddings = []
+    remaining = list(lines)
+
+    for tier in batch_tiers:
+        if not remaining:
+            break
+        total_chunks = (len(remaining) + tier - 1) // tier
+        logging.info(f"OpenRouter: trying batch size {tier} for {len(remaining)} texts ({total_chunks} request(s))")
+
+        failed = []
+        for chunk_idx in range(0, len(remaining), tier):
+            chunk = remaining[chunk_idx : chunk_idx + tier]
+            result = _openrouter_embed_chunk(chunk, model, headers, url)
+            if result is not None:
+                all_embeddings.extend(result)
+            else:
+                failed.extend(chunk)
+
+        remaining = failed
+        if remaining:
+            logging.info(f"OpenRouter: {len(remaining)} texts failed at batch size {tier}, falling back to {batch_tiers[batch_tiers.index(tier) + 1] if tier != 1 else 'error'}")
+
+    if remaining:
+        raise ValueError(
+            f"OpenRouter: {len(remaining)} texts failed for model {model} at all batch tiers"
+        )
+
+    return all_embeddings
+
+
 def get_line_vectors_by_api(
     lines,
     line_ids,
@@ -75,13 +131,15 @@ def get_line_vectors_by_api(
       Direct synchronous Python call — does NOT use the OpenAI parallel processor subprocess.
       Embeddings are L2-normalized to match local path behavior.
     - "openai": OpenAI Embeddings API via api_request_parallel_processor.py subprocess.
+    - "openrouter": OpenRouter Embeddings API via direct requests.post call.
+      Sends all texts as a batch in one request. L2-normalized to match local path behavior.
 
     Args:
         lines: list of text strings to embed
         line_ids: list of integer row IDs (1-to-1 with lines)
         tasks_path: path for JSONL task file (OpenAI path only)
         result_path: path for JSONL result file (OpenAI path only)
-        api: provider name — "hf-inference" or "openai"
+        api: provider name — "hf-inference", "openai", or "openrouter"
         model: model identifier for the provider
         remove_after: whether to remove task/result files after (OpenAI path only)
         max_len: if set, truncate result to this length
@@ -100,6 +158,23 @@ def get_line_vectors_by_api(
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1, norms)
         vecs = vecs / norms
+        result_embeddings = vecs.tolist()
+        if max_len:
+            return result_embeddings[:max_len]
+        return result_embeddings
+    elif api == "openrouter":
+        import requests
+
+        logging.info(f"OpenRouter embeddings: model={model}, {len(lines)} texts")
+
+        all_embeddings = _openrouter_embed_batched(lines, model, api_key)
+
+        # L2-normalize to match local path behavior
+        vecs = np.array(all_embeddings)
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)
+        vecs = vecs / norms
+
         result_embeddings = vecs.tolist()
         if max_len:
             return result_embeddings[:max_len]
