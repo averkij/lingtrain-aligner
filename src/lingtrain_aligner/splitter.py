@@ -1,9 +1,12 @@
 """Texts splitter part of the engine"""
 
+import logging
 import re
 
 import razdel
 from lingtrain_aligner import preprocessor
+
+logger = logging.getLogger(__name__)
 
 RU_CODE = "ru"
 BE_CODE = "bu"
@@ -239,16 +242,19 @@ def split_by_sentences_and_save(
     with open(raw_path, mode="r", encoding="utf-8") as input_file, open(
         splitted_path, mode="w", encoding="utf-8"
     ) as out_file:
-        if is_lang_code_valid(langcode):
-            lines = input_file.readlines()
-            lines = preprocess_raw(lines, [(quotes, '"')])
-            if handle_marks:
-                lines = preprocessor.mark_paragraphs(lines)
-                sentences = split_by_sentences_wrapper(lines, langcode, clean_text)
-            else:
-                sentences = split_by_sentences(lines, langcode, clean_text)
+        if not is_lang_code_valid(langcode):
+            logger.warning(
+                "Unsupported language code '%s', falling back to '%s' (General)",
+                langcode, XX_CODE,
+            )
+            langcode = XX_CODE
+        lines = input_file.readlines()
+        lines = preprocess_raw(lines, [(quotes, '"')])
+        if handle_marks:
+            lines = preprocessor.mark_paragraphs(lines)
+            sentences = split_by_sentences_wrapper(lines, langcode, clean_text)
         else:
-            raise Exception(f"Unknown language code: {langcode}")
+            sentences = split_by_sentences(lines, langcode, clean_text)
 
         count = 1
         for x in sentences:
