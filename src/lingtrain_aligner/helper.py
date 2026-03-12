@@ -2,9 +2,180 @@ import json
 import logging
 import sqlite3
 from collections import defaultdict
+from datetime import datetime, timezone
 import os
 from lingtrain_aligner import constants as con
 import numpy as np
+
+
+INFO_KEY_NAME = "name"
+INFO_KEY_CREATED_AT = "created_at"
+INFO_KEY_LAST_EDITED_AT = "last_edited_at"
+INFO_KEY_EMBEDDING_MODEL = "embedding_model"
+INFO_KEY_EMBEDDING_MODEL_NAME = "embedding_model_name"
+INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME = "embedding_model_resolved_name"
+INFO_KEY_EMBEDDING_INFERENCE = "embedding_model_inference"
+
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_info_key_index(db):
+    """Deduplicate info rows once and enforce key uniqueness for future upserts."""
+    index_names = {
+        row[1] for row in db.execute("PRAGMA index_list(info)").fetchall()
+    }
+    if "idx_info_key_unique" in index_names:
+        return
+
+    db.execute(
+        """
+        DELETE FROM info
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM info
+            GROUP BY key
+        )
+        """
+    )
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_info_key_unique ON info(key)")
+
+
+def get_info_value_conn(db, key):
+    row = db.execute(
+        "SELECT val FROM info WHERE key = ? LIMIT 1",
+        (key,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def get_info_value(db_path, key):
+    with sqlite3.connect(db_path) as db:
+        return get_info_value_conn(db, key)
+
+
+def set_info_value_conn(db, key, val):
+    _ensure_info_key_index(db)
+    if val is None:
+        db.execute("DELETE FROM info WHERE key = ?", (key,))
+        return
+
+    db.execute(
+        """
+        INSERT INTO info(key, val)
+        VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET val = excluded.val
+        """,
+        (key, str(val)),
+    )
+
+
+def set_info_value(db_path, key, val):
+    with sqlite3.connect(db_path) as db:
+        set_info_value_conn(db, key, val)
+
+
+def get_created_at(db_path):
+    return get_info_value(db_path, INFO_KEY_CREATED_AT)
+
+
+def get_last_edited_at(db_path):
+    return get_info_value(db_path, INFO_KEY_LAST_EDITED_AT)
+
+
+def touch_last_edited_conn(db, ts=None):
+    set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, ts or _utc_now_iso())
+
+
+def touch_last_edited(db_path, ts=None):
+    with sqlite3.connect(db_path) as db:
+        touch_last_edited_conn(db, ts=ts)
+
+
+def set_embedding_metadata_conn(
+    db,
+    *,
+    model_key=None,
+    model_display_name=None,
+    model_name=None,
+    inference_type=None,
+):
+    if model_key:
+        set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL, model_key)
+    if model_display_name:
+        set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_NAME, model_display_name)
+    if model_name:
+        set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME, model_name)
+    if inference_type:
+        set_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE, inference_type)
+
+
+def set_embedding_metadata(
+    db_path,
+    *,
+    model_key=None,
+    model_display_name=None,
+    model_name=None,
+    inference_type=None,
+):
+    with sqlite3.connect(db_path) as db:
+        set_embedding_metadata_conn(
+            db,
+            model_key=model_key,
+            model_display_name=model_display_name,
+            model_name=model_name,
+            inference_type=inference_type,
+        )
+
+
+def clear_embedding_metadata_conn(db):
+    for key in (
+        INFO_KEY_EMBEDDING_MODEL,
+        INFO_KEY_EMBEDDING_MODEL_NAME,
+        INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME,
+        INFO_KEY_EMBEDDING_INFERENCE,
+    ):
+        set_info_value_conn(db, key, None)
+
+
+def clear_embedding_metadata(db_path):
+    with sqlite3.connect(db_path) as db:
+        clear_embedding_metadata_conn(db)
+
+
+def _infer_alignment_timestamp(db, agg):
+    candidates = []
+    for table_name in ("history", "batches"):
+        try:
+            row = db.execute(
+                f"SELECT {agg}(insert_ts) FROM {table_name} WHERE insert_ts IS NOT NULL"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        if row and row[0]:
+            candidates.append(row[0])
+    if not candidates:
+        return None
+    return min(candidates) if agg == "MIN" else max(candidates)
+
+
+def _infer_model_metadata(db):
+    for table_name in ("splitted_from", "splitted_to"):
+        try:
+            row = db.execute(
+                f"""
+                SELECT model, inference
+                FROM {table_name}
+                WHERE model IS NOT NULL OR inference IS NOT NULL
+                LIMIT 1
+                """
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        if row and (row[0] or row[1]):
+            return row[0], row[1]
+    return None, None
 
 
 def _embedding_to_blob(vec):
@@ -100,6 +271,10 @@ def init_document_db(db_path):
         )
         db.execute("create table info(id integer primary key, key text, val text)")
         db.execute("create table version(id integer primary key, version text)")
+        _ensure_info_key_index(db)
+        created_at = _utc_now_iso()
+        set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
+        set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, created_at)
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
 
@@ -237,6 +412,103 @@ def get_clear_flatten_doc_index(db_path):
     except:
         logging.warning("can not fetch flatten index")
     return res
+
+
+def compact_batches(db_path):
+    """Drop empty doc_index batches and renumber survivors to dense batch ids.
+
+    Conflict resolution can absorb a batch and leave holes in batch numbering.
+    The web app and several helper flows assume batch ids are dense from 0.
+    """
+    with sqlite3.connect(db_path) as db:
+        try:
+            row = db.execute("SELECT contents FROM doc_index").fetchone()
+        except sqlite3.OperationalError:
+            return {"mapping": {}, "removed": [], "batch_ids": []}
+
+        if not row or not row[0]:
+            return {"mapping": {}, "removed": [], "batch_ids": []}
+
+        index = json.loads(row[0])
+        compact_index = []
+        mapping = {}
+        removed = []
+
+        for old_id, batch in enumerate(index):
+            if batch:
+                mapping[old_id] = len(compact_index)
+                compact_index.append(batch)
+            else:
+                removed.append(old_id)
+
+        moved = {old_id: new_id for old_id, new_id in mapping.items() if old_id != new_id}
+        if not removed and not moved:
+            return {
+                "mapping": mapping,
+                "removed": removed,
+                "batch_ids": list(range(len(compact_index))),
+            }
+
+        db.execute(
+            "insert or replace into doc_index (id, contents) values ((select id from doc_index limit 1), ?)",
+            (json.dumps(compact_index),),
+        )
+
+        tables = ("processing_from", "processing_to", "batches", "history")
+        if removed:
+            placeholders = ",".join(["?"] * len(removed))
+            for table_name in tables:
+                try:
+                    db.execute(
+                        f"DELETE FROM {table_name} WHERE batch_id IN ({placeholders})",
+                        tuple(removed),
+                    )
+                except sqlite3.OperationalError:
+                    continue
+
+        if moved:
+            db.execute(
+                "CREATE TEMP TABLE temp_batch_map(old_id INTEGER PRIMARY KEY, new_id INTEGER NOT NULL)"
+            )
+            db.executemany(
+                "INSERT INTO temp_batch_map(old_id, new_id) VALUES(?, ?)",
+                moved.items(),
+            )
+            temp_offset = 1000000
+            for table_name in tables:
+                try:
+                    db.execute(
+                        f"""
+                        UPDATE {table_name}
+                        SET batch_id = batch_id + {temp_offset}
+                        WHERE batch_id IN (SELECT old_id FROM temp_batch_map)
+                        """
+                    )
+                except sqlite3.OperationalError:
+                    continue
+            for table_name in tables:
+                try:
+                    db.execute(
+                        f"""
+                        UPDATE {table_name}
+                        SET batch_id = (
+                            SELECT new_id
+                            FROM temp_batch_map
+                            WHERE old_id = {table_name}.batch_id - {temp_offset}
+                        )
+                        WHERE batch_id >= {temp_offset}
+                        """
+                    )
+                except sqlite3.OperationalError:
+                    continue
+            db.execute("DROP TABLE temp_batch_map")
+
+        touch_last_edited_conn(db)
+        return {
+            "mapping": mapping,
+            "removed": removed,
+            "batch_ids": list(range(len(compact_index))),
+        }
 
 
 def add_empty_processing_line(db, batch_id):
@@ -467,6 +739,7 @@ def update_splitted_text(db_path, direction, line_id, val):
         table_name = "splitted_to"
     with sqlite3.connect(db_path) as db:
         db.execute(f"update {table_name} set text=? where id=?", (val, line_id))
+        touch_last_edited_conn(db)
 
 
 def update_processing_text(db_path, direction, line_id, val):
@@ -479,6 +752,7 @@ def update_processing_text(db_path, direction, line_id, val):
         db.execute(
             f"update {table_name} set text=? where text_ids=?", (val, f"[{line_id}]")
         )
+        touch_last_edited_conn(db)
 
 
 def insert_new_splitted_line(db_path, direction, line_id):
@@ -509,6 +783,7 @@ def insert_new_splitted_line(db_path, direction, line_id):
                     select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider from {table_name} where id=?""",
                 (line_id,),
             )
+        touch_last_edited_conn(db)
 
 
 def update_processing_mapping(db_path, direction, line_id):
@@ -542,6 +817,7 @@ def update_processing_mapping(db_path, direction, line_id):
         """
         )
         db.execute("drop table temp_mapping")
+        touch_last_edited_conn(db)
 
 
 def get_doc_page(db_path, text_ids):
@@ -777,6 +1053,7 @@ def add_meta(
                 for key, val, occurence, par_id, comment in data
             ],
         )
+        touch_last_edited_conn(db)
     return
 
 
@@ -784,6 +1061,7 @@ def delete_meta(db_path, mark_id):
     """Mark meta as deleted"""
     with sqlite3.connect(db_path) as db:
         db.execute(f"update meta set deleted = 1 where id=(?)", (mark_id,))
+        touch_last_edited_conn(db)
     return
 
 
@@ -812,6 +1090,7 @@ def edit_meta(db_path, mark, direction, mark_id, par_id, val):
                 f"update meta set val=(?), par_id=(?) where id=(?)",
                 (val, par_id, mark_id),
             )
+        touch_last_edited_conn(db)
     return
 
 
@@ -919,6 +1198,7 @@ def migrate_document_db(db_path):
 
     Migration steps applied:
       7.1 -> 7.2: add model TEXT and inference TEXT to splitted_from and splitted_to.
+      7.2 -> 7.3: add reliable info-key upserts and backfill DB-level metadata.
     """
     with sqlite3.connect(db_path) as db:
         current_version = float(db.execute("SELECT version FROM version").fetchone()[0])
@@ -946,6 +1226,30 @@ def migrate_document_db(db_path):
 
             # Bump version
             db.execute("UPDATE version SET version = ?", ("7.2",))
+            current_version = 7.2
+
+        if current_version < 7.3:
+            _ensure_info_key_index(db)
+            created_at = (
+                get_info_value_conn(db, INFO_KEY_CREATED_AT)
+                or _infer_alignment_timestamp(db, "MIN")
+                or _utc_now_iso()
+            )
+            last_edited_at = (
+                get_info_value_conn(db, INFO_KEY_LAST_EDITED_AT)
+                or _infer_alignment_timestamp(db, "MAX")
+                or created_at
+            )
+            model_name, inference_type = _infer_model_metadata(db)
+            set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
+            set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, last_edited_at)
+            if model_name and not get_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_NAME):
+                set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_NAME, model_name)
+            if model_name and not get_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME):
+                set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME, model_name)
+            if inference_type and not get_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE):
+                set_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE, inference_type)
+            db.execute("UPDATE version SET version = ?", (con.DB_VERSION,))
 
 
 def set_provenance(db_path, direction, line_ids, model_name, inference_type):
@@ -961,6 +1265,14 @@ def set_provenance(db_path, direction, line_ids, model_name, inference_type):
             f"UPDATE {table_name} SET model=?, inference=? WHERE id=?",
             [(model_name, inference_type, lid) for lid in line_ids],
         )
+        set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL, None)
+        set_embedding_metadata_conn(
+            db,
+            model_display_name=model_name,
+            model_name=model_name,
+            inference_type=inference_type,
+        )
+        touch_last_edited_conn(db)
 
 
 def check_model_mismatch(db_path, expected_model):
@@ -980,17 +1292,13 @@ def check_model_mismatch(db_path, expected_model):
 def set_name(db_path, name):
     """Update alignment name"""
     with sqlite3.connect(db_path) as db:
-        db.execute(
-            "insert or replace into info (key, val) values ('name',?)",
-            (name,),
-        )
+        set_info_value_conn(db, INFO_KEY_NAME, name)
+        touch_last_edited_conn(db)
 
 
 def get_name(db_path):
     """Get alignment name"""
-    with sqlite3.connect(db_path) as db:
-        res = db.execute(f"select i.val from info i where i.key='name'").fetchone()
-    return res[0]
+    return get_info_value(db_path, INFO_KEY_NAME) or ""
 
 
 def get_unique_variants(variants_ids):

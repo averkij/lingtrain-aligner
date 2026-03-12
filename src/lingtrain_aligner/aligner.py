@@ -1169,6 +1169,7 @@ def update_doc_index(db, index):
         "insert or replace into doc_index (id, contents) values ((select id from doc_index limit 1),?)",
         (index,),
     )
+    helper.touch_last_edited_conn(db)
 
 
 def get_doc_index(db):
@@ -1214,6 +1215,7 @@ def update_history(db_path, batch_ids, operation, parameters):
             "insert into history(operation, batch_id, parameters, insert_ts) values (?,?,?, datetime('now'))",
             [(operation, batch_id, parameters) for batch_id in batch_ids],
         )
+        helper.touch_last_edited_conn(db)
 
 
 def fill_db_from_files(
@@ -1426,6 +1428,7 @@ def load_proxy(db_path, filepath, direction):
                 "update splitted_to set proxy_text=(?) where id=(?)",
                 [(proxy, id) for id, proxy in zip(ids, lines_proxy)],
             )
+        helper.touch_last_edited_conn(db)
 
 
 def update_proxy_text(db_path, proxy_texts, ids, direction):
@@ -1446,6 +1449,7 @@ def update_proxy_text(db_path, proxy_texts, ids, direction):
                 db.execute(
                     "update splitted_to set proxy_text=(?) where id=(?)", (text, id)
                 )
+        helper.touch_last_edited_conn(db)
 
 
 def update_proxy_text_from(db_path, proxy_texts, ids=[]):
