@@ -822,8 +822,8 @@ def create_polybook_preview(
 
     # --------------------DIVIDER
     res_html += "<div class='dt-row header'>"
-    for _ in range(langs_count):
-        res_html += f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+    # for _ in range(langs_count):
+    #     res_html += f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
     res_html += "</div>"
 
     # --------------------TITLE and AUTHOR
