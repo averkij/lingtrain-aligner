@@ -469,8 +469,8 @@ def process_batch(
         id_to = line_ids_to[best_sim_ind[line_from_id]]
         text_to = lines_to_batch[best_sim_ind[line_from_id]]
 
-        texts_from.append((f"[{id_from+1}]", id_from + 1, text_from.strip()))
-        texts_to.append((f"[{id_to+1}]", id_to + 1, text_to.strip()))
+        texts_from.append((f"[{id_from}]", id_from, text_from.strip()))
+        texts_to.append((f"[{id_to}]", id_to, text_to.strip()))
 
     _elapsed = _time.monotonic() - _batch_start
     _mins, _secs = divmod(int(_elapsed), 60)
@@ -812,8 +812,8 @@ def get_batch_intersected(
     iter3=[],
     iter4=[],
     start_batch_id=0,
-    batch_start_line_id_from=0,
-    batch_start_line_id_to=0,
+    batch_start_line_id_from=1,
+    batch_start_line_id_to=1,
 ):
     """Get batch with an additional window"""
     l1 = len(iter1)
