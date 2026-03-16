@@ -9,6 +9,7 @@ import seaborn as sns
 from lingtrain_aligner import (
     aligner,
     helper,
+    punct_sim,
     resolver,
 )
 from scipy import spatial
@@ -434,6 +435,9 @@ def score_variants_by_similarity(
 
                 score += sim
 
+                # punctuation bonus
+                score += punct_sim.punct_bonus_for_texts(text_from, text_to)
+
                 # penalty by distant text lenghts
                 len_weight = abs(len(text_from) - len(text_to)) / 100
                 score -= len_weight * 0.1
@@ -453,6 +457,9 @@ def score_variants_by_similarity(
                 if sim < -1 or sim > 1:
                     raise ValueError(f"Similarity score out of bounds: {sim}")
                 score += sim
+
+                # punctuation bonus
+                score += punct_sim.punct_bonus_for_texts(text_from, text_to)
 
                 # penalty by distant text lenghts
                 len_weight = abs(len(text_from) - len(text_to)) / 100

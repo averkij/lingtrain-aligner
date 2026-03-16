@@ -11,7 +11,7 @@ from collections import defaultdict
 import numpy as np
 from lingtrain_aligner import constants as con
 from lingtrain_aligner import (helper, model_dispatcher, preprocessor,
-                               vis_helper)
+                               punct_sim, vis_helper)
 from scipy import spatial
 from sentence_transformers import SentenceTransformer
 import subprocess
@@ -439,6 +439,12 @@ def process_batch(
     logging.debug(f"Calculating similarity matrix.")
 
     sim_matrix = get_sim_matrix(vectors1, vectors2, window)
+
+    # Boost with punctuation similarity (language-independent signal)
+    sim_matrix = punct_sim.boost_sim_matrix(
+        sim_matrix, lines_from_batch, lines_to_batch, weight=0.15
+    )
+
     sim_matrix_best = best_per_row_with_ones(sim_matrix)
 
     x_min, y_min = min(line_ids_from), min(line_ids_to)

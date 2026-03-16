@@ -5,7 +5,7 @@ import sqlite3
 from collections import defaultdict
 
 import more_itertools as mit
-from lingtrain_aligner import aligner, helper
+from lingtrain_aligner import aligner, helper, punct_sim
 from tqdm import tqdm
 import logging
 import copy
@@ -246,8 +246,12 @@ def squash_conflict(
 
     unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
 
-    # for key in unique_sims:
-    #     print(get_string(splitted_from, key[0]), "<->", get_string(splitted_to, key[1]), "->", unique_sims[key],"\n")
+    # Add punctuation-based bonus to similarity scores
+    for key in unique_sims:
+        from_ids, to_ids = key
+        text_from = helper.get_string(splitted_from, from_ids)
+        text_to = helper.get_string(splitted_to, to_ids)
+        unique_sims[key] += punct_sim.punct_bonus_for_texts(text_from, text_to)
 
     variant_sims = [sum(unique_sims[id] for id in ids) for ids in variants_ids]
     best_var_index = int(np.argmax(variant_sims))
