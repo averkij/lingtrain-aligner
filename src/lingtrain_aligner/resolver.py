@@ -167,8 +167,45 @@ def get_conflicts(chains_from, chains_to, max_len=6):
     return conflicts_to_solve, conflicts_rest
 
 
+def _contiguous_partitions(items, k):
+    """Yield all ways to split *items* into *k* contiguous groups.
+
+    Uses C(n-1, k-1) split-point combinations — lightweight and bounded.
+    """
+    n = len(items)
+    if k == 1:
+        yield (tuple(items),)
+        return
+    if k == n:
+        yield tuple((x,) for x in items)
+        return
+    if k > n or k < 1:
+        return
+    from itertools import combinations
+    for splits in combinations(range(1, n), k - 1):
+        groups = []
+        prev = 0
+        for s in splits:
+            groups.append(tuple(items[prev:s]))
+            prev = s
+        groups.append(tuple(items[prev:]))
+        yield tuple(groups)
+
+
+_MAX_EXTENDED_VARIANTS = 5000
+
+
 def get_variants(conflict, show_logs=False):
-    """Get resolving variants"""
+    """Get resolving variants.
+
+    Generates contiguous partition variants for ALL group counts (1 to min(N,M))
+    and partitions BOTH sides. This allows finding solutions that require merging
+    on both the source and target sides.
+
+    For large conflicts where the extended cross-product exceeds
+    ``_MAX_EXTENDED_VARIANTS``, falls back to the original single-side
+    partitioning at k = min(N, M) to stay within safe bounds.
+    """
     ids_from = [
         x for x in range(conflict["from"]["start"][0], conflict["from"]["end"][0] + 1)
     ]
@@ -181,16 +218,37 @@ def get_variants(conflict, show_logs=False):
         print("ids_to", ids_to)
         print("\n")
 
-    groups = min(len(ids_from), len(ids_to))
+    n, m = len(ids_from), len(ids_to)
+    max_groups = min(n, m)
+
+    # Check expected variant count before generating.
+    from math import comb
+    expected = sum(
+        comb(n - 1, k - 1) * comb(m - 1, k - 1)
+        for k in range(1, max_groups + 1)
+    )
+
+    if expected <= _MAX_EXTENDED_VARIANTS:
+        # Extended: all group counts, both sides partitioned
+        res = []
+        for k in range(1, max_groups + 1):
+            from_parts = list(_contiguous_partitions(ids_from, k))
+            to_parts = list(_contiguous_partitions(ids_to, k))
+            for pf in from_parts:
+                for pt in to_parts:
+                    res.append([(tuple(a), tuple(b)) for a, b in zip(pf, pt)])
+        return res
+
+    # Fallback for large conflicts: partition longer side only at k = max_groups
     res = []
-    if len(ids_from) < len(ids_to):
-        grouped_subs = [x for x in mit.partitions(ids_to) if len(x) == groups]
-        for _, sub in enumerate(grouped_subs):
-            res.append([((a,), tuple(b)) for a, b in zip(ids_from, sub)])
+    if n < m:
+        for pt in _contiguous_partitions(ids_to, max_groups):
+            res.append([((a,), tuple(b)) for a, b in zip(ids_from, pt)])
+    elif n > m:
+        for pf in _contiguous_partitions(ids_from, max_groups):
+            res.append([(tuple(a), (b,)) for a, b in zip(pf, ids_to)])
     else:
-        grouped_subs = [x for x in mit.partitions(ids_from) if len(x) == groups]
-        for _, sub in enumerate(grouped_subs):
-            res.append([(tuple(a), (b,)) for a, b in zip(sub, ids_to)])
+        res.append([((a,), (b,)) for a, b in zip(ids_from, ids_to)])
     return res
 
 
@@ -214,6 +272,7 @@ def squash_conflict(
     lang_emb_to="ell_Grek",
     use_aggregation=False,
     aggregation_method="weighted_average",
+    power_scoring_exponent=0.6,
 ):
     """Find the best solution"""
     splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
@@ -253,7 +312,12 @@ def squash_conflict(
         text_to = helper.get_string(splitted_to, to_ids)
         unique_sims[key] += punct_sim.punct_bonus_for_texts(text_from, text_to)
 
-    variant_sims = [sum(unique_sims[id] for id in ids) for ids in variants_ids]
+    # Power scoring: sum/k^power_scoring_exponent — balances cross-group-count comparison
+    # so extended both-side partitioning can find lower-k solutions when appropriate.
+    variant_sims = [
+        sum(unique_sims[id] for id in ids) / (len(ids) ** power_scoring_exponent)
+        for ids in variants_ids
+    ]
     best_var_index = int(np.argmax(variant_sims))
 
     if show_logs:
