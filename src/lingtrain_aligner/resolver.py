@@ -252,6 +252,705 @@ def get_variants(conflict, show_logs=False):
     return res
 
 
+# ---------------------------------------------------------------------------
+# Conflict splitting via Penalized DP
+# ---------------------------------------------------------------------------
+
+MAX_DIRECT_RESOLVE_SIZE = 12
+
+
+def _run_penalized_dp(sim_matrix, skip_penalty=-0.2, merge_penalty=-0.15):
+    """Run the penalized DP and return the full backtracked path.
+
+    Returns list of (from_idx, to_idx, similarity, move_type) tuples.
+    Move types: 0=1:1 diagonal, 1=2:1 merge, 2=1:2 merge, 3=skip_from, 4=skip_to.
+    """
+    n, m = sim_matrix.shape
+    if n == 0 or m == 0:
+        return []
+
+    dp = np.full((n, m), -np.inf)
+    parent = np.full((n, m, 2), -1, dtype=np.int32)
+    move_type = np.full((n, m), -1, dtype=np.int32)
+
+    dp[0, 0] = float(sim_matrix[0, 0])
+
+    for i in range(n):
+        for j in range(m):
+            if i == 0 and j == 0:
+                continue
+            best_val = -np.inf
+            best_parent = (-1, -1)
+            best_move = -1
+
+            # 1:1 diagonal
+            if i > 0 and j > 0 and dp[i - 1, j - 1] > -np.inf:
+                val = dp[i - 1, j - 1] + sim_matrix[i, j]
+                if val > best_val:
+                    best_val, best_parent, best_move = val, (i - 1, j - 1), 0
+
+            # 2:1 merge (two from-sentences → one to)
+            if i > 1 and j > 0 and dp[i - 2, j - 1] > -np.inf:
+                avg_sim = (sim_matrix[i - 1, j] + sim_matrix[i, j]) / 2
+                val = dp[i - 2, j - 1] + avg_sim + merge_penalty
+                if val > best_val:
+                    best_val, best_parent, best_move = val, (i - 2, j - 1), 1
+
+            # 1:2 merge (one from → two to-sentences)
+            if i > 0 and j > 1 and dp[i - 1, j - 2] > -np.inf:
+                avg_sim = (sim_matrix[i, j - 1] + sim_matrix[i, j]) / 2
+                val = dp[i - 1, j - 2] + avg_sim + merge_penalty
+                if val > best_val:
+                    best_val, best_parent, best_move = val, (i - 1, j - 2), 2
+
+            # Skip from
+            if i > 0 and dp[i - 1, j] > -np.inf:
+                val = dp[i - 1, j] + skip_penalty
+                if val > best_val:
+                    best_val, best_parent, best_move = val, (i - 1, j), 3
+
+            # Skip to
+            if j > 0 and dp[i, j - 1] > -np.inf:
+                val = dp[i, j - 1] + skip_penalty
+                if val > best_val:
+                    best_val, best_parent, best_move = val, (i, j - 1), 4
+
+            dp[i, j] = best_val
+            parent[i, j] = [best_parent[0], best_parent[1]]
+            move_type[i, j] = best_move
+
+    # Backtrack
+    path = []
+    i, j = n - 1, m - 1
+    while i >= 0 and j >= 0:
+        path.append((i, j, float(sim_matrix[i, j]), int(move_type[i, j])))
+        pi, pj = int(parent[i, j, 0]), int(parent[i, j, 1])
+        if pi == -1:
+            break
+        i, j = pi, pj
+    path.reverse()
+
+    return path
+
+
+def penalized_dp_anchors(
+    sim_matrix,
+    skip_penalty=-0.2,
+    merge_penalty=-0.15,
+    anchor_threshold=0.5,
+    min_gap=2,
+):
+    """Find anchor points in a similarity matrix using penalized DP.
+
+    Returns list of (from_idx, to_idx, confidence) where indices are
+    0-based positions within the matrix.
+    """
+    path = _run_penalized_dp(sim_matrix, skip_penalty, merge_penalty)
+
+    # Extract 1:1 diagonal matches as anchors
+    anchors = []
+    for (i, j, s, mt) in path:
+        if mt == 0 and s >= anchor_threshold:
+            anchors.append((i, j, s))
+
+    # Filter minimum gap
+    filtered = []
+    for a in anchors:
+        if not filtered or (
+            a[0] - filtered[-1][0] >= min_gap
+            and a[1] - filtered[-1][1] >= min_gap
+        ):
+            filtered.append(a)
+
+    return filtered
+
+
+def dp_path_to_solution(path, from_ids, to_ids):
+    """Convert a DP path into a solution (list of (from_tuple, to_tuple) pairs).
+
+    Used as a fallback when a large conflict has no usable anchors —
+    the DP path itself IS the best alignment we can produce.
+    """
+    solution = []
+    consumed_from = set()
+    consumed_to = set()
+
+    for i, j, sim, mt in path:
+        if mt == 0:
+            # 1:1 diagonal
+            solution.append(((from_ids[i],), (to_ids[j],)))
+            consumed_from.add(i)
+            consumed_to.add(j)
+        elif mt == 1:
+            # 2:1 merge: from[i-1]+from[i] → to[j]
+            solution.append(((from_ids[i - 1], from_ids[i]), (to_ids[j],)))
+            consumed_from.update({i - 1, i})
+            consumed_to.add(j)
+        elif mt == 2:
+            # 1:2 merge: from[i] → to[j-1]+to[j]
+            solution.append(((from_ids[i],), (to_ids[j - 1], to_ids[j])))
+            consumed_from.add(i)
+            consumed_to.update({j - 1, j})
+        # skip_from (3) and skip_to (4) produce no alignment pair
+
+    # Handle any remaining unconsumed lines by merging into nearest pair
+    unconsumed_from = [k for k in range(len(from_ids)) if k not in consumed_from]
+    unconsumed_to = [k for k in range(len(to_ids)) if k not in consumed_to]
+
+    if unconsumed_from and solution:
+        # Merge unconsumed from-lines into their nearest existing pair
+        for k in unconsumed_from:
+            # Find the pair whose from-ids are closest
+            best_idx = 0
+            best_dist = abs(from_ids[k] - solution[0][0][0])
+            for si, (sf, st) in enumerate(solution):
+                d = min(abs(from_ids[k] - fid) for fid in sf)
+                if d < best_dist:
+                    best_dist = d
+                    best_idx = si
+            sf, st = solution[best_idx]
+            solution[best_idx] = (tuple(sorted(set(sf + (from_ids[k],)))), st)
+
+    if unconsumed_to and solution:
+        for k in unconsumed_to:
+            best_idx = 0
+            best_dist = abs(to_ids[k] - solution[0][1][0])
+            for si, (sf, st) in enumerate(solution):
+                d = min(abs(to_ids[k] - tid) for tid in st)
+                if d < best_dist:
+                    best_dist = d
+                    best_idx = si
+            sf, st = solution[best_idx]
+            solution[best_idx] = (sf, tuple(sorted(set(st + (to_ids[k],)))))
+
+    # If no path produced any pairs (very degenerate), create one big merge
+    if not solution:
+        solution = [(tuple(from_ids), tuple(to_ids))]
+
+    return solution
+
+
+def diagonal_peaks_anchors(sim_matrix, threshold=0.55, min_gap=2):
+    """Find mutual best-match anchors near the expected diagonal.
+
+    Returns list of (from_idx, to_idx, confidence) in 0-based matrix indices.
+    """
+    n, m = sim_matrix.shape
+    if n == 0 or m == 0:
+        return []
+
+    ratio = m / n
+    best_to_for_from = np.argmax(sim_matrix, axis=1)
+    best_from_for_to = np.argmax(sim_matrix, axis=0)
+    best_sim_for_from = np.max(sim_matrix, axis=1)
+
+    anchors = []
+    for i in range(n):
+        j = int(best_to_for_from[i])
+        if best_from_for_to[j] == i:
+            sim_val = float(best_sim_for_from[i])
+            expected_j = i * ratio
+            diagonal_dist = abs(j - expected_j) / max(m, 1)
+            if sim_val >= threshold and diagonal_dist < 0.15:
+                anchors.append((i, j, sim_val))
+
+    filtered = []
+    for a in anchors:
+        if not filtered or (
+            a[0] - filtered[-1][0] >= min_gap
+            and a[1] - filtered[-1][1] >= min_gap
+        ):
+            filtered.append(a)
+
+    return filtered
+
+
+def compute_conflict_sim_matrix(db_path, conflict, use_proxy_from=False, use_proxy_to=False):
+    """Compute cosine similarity matrix for a conflict's line embeddings.
+
+    Returns (sim_matrix, from_ids, to_ids) where from_ids/to_ids are lists
+    of document-level IDs corresponding to matrix rows/columns.
+    """
+    from_start = conflict["from"]["start"][0]
+    from_end = conflict["from"]["end"][0]
+    to_start = conflict["to"]["start"][0]
+    to_end = conflict["to"]["end"][0]
+
+    from_ids = list(range(from_start, from_end + 1))
+    to_ids = list(range(to_start, to_end + 1))
+
+    if not from_ids or not to_ids:
+        return np.zeros((0, 0)), from_ids, to_ids
+
+    emb_from_raw = dict(
+        helper.get_embeddings(db_path, "from", from_ids, is_proxy=use_proxy_from)
+    )
+    emb_to_raw = dict(
+        helper.get_embeddings(db_path, "to", to_ids, is_proxy=use_proxy_to)
+    )
+
+    # Check for missing embeddings
+    missing_from = [fid for fid in from_ids if emb_from_raw.get(fid) is None]
+    missing_to = [tid for tid in to_ids if emb_to_raw.get(tid) is None]
+    if missing_from or missing_to:
+        logging.warning(
+            "Missing embeddings for conflict splitting: from=%s, to=%s",
+            missing_from, missing_to,
+        )
+        # Remove IDs with missing embeddings from the matrix
+        from_ids = [fid for fid in from_ids if emb_from_raw.get(fid) is not None]
+        to_ids = [tid for tid in to_ids if emb_to_raw.get(tid) is not None]
+        if not from_ids or not to_ids:
+            return np.zeros((0, 0)), from_ids, to_ids
+
+    emb_from = np.array([emb_from_raw[fid] for fid in from_ids], dtype=np.float32)
+    emb_to = np.array([emb_to_raw[tid] for tid in to_ids], dtype=np.float32)
+
+    # L2 normalize
+    norms_from = np.linalg.norm(emb_from, axis=1, keepdims=True)
+    norms_to = np.linalg.norm(emb_to, axis=1, keepdims=True)
+    norms_from = np.where(norms_from < 1e-10, 1.0, norms_from)
+    norms_to = np.where(norms_to < 1e-10, 1.0, norms_to)
+    emb_from = emb_from / norms_from
+    emb_to = emb_to / norms_to
+
+    sim_matrix = emb_from @ emb_to.T
+    return sim_matrix, from_ids, to_ids
+
+
+def find_conflict_anchors(
+    db_path,
+    conflict,
+    use_proxy_from=False,
+    use_proxy_to=False,
+    use_cross_validation=False,
+    dp_threshold=0.5,
+    peak_threshold=0.55,
+    high_confidence_threshold=0.8,
+):
+    """Find anchor points within a large conflict using Penalized DP.
+
+    Returns list of (from_doc_id, to_doc_id, confidence).
+    """
+    sim_matrix, from_ids, to_ids = compute_conflict_sim_matrix(
+        db_path, conflict, use_proxy_from, use_proxy_to,
+    )
+    if sim_matrix.size == 0:
+        return [], from_ids, to_ids
+
+    dp_anchors = penalized_dp_anchors(
+        sim_matrix, anchor_threshold=dp_threshold,
+    )
+
+    if use_cross_validation and dp_anchors:
+        peak_anchors = diagonal_peaks_anchors(
+            sim_matrix, threshold=peak_threshold,
+        )
+        peak_set = set((a[0], a[1]) for a in peak_anchors)
+        confirmed = []
+        for fi, ti, conf in dp_anchors:
+            near_peak = any(
+                abs(fi - pi) <= 1 and abs(ti - pj) <= 1
+                for pi, pj in peak_set
+            )
+            if near_peak or conf >= high_confidence_threshold:
+                confirmed.append((fi, ti, conf))
+        dp_anchors = confirmed
+
+    # Map matrix indices back to document IDs
+    doc_anchors = [
+        (from_ids[fi], to_ids[ti], conf)
+        for fi, ti, conf in dp_anchors
+    ]
+
+    return doc_anchors, from_ids, to_ids
+
+
+def _build_sub_conflict(conflict, from_start_id, from_end_id, to_start_id, to_end_id):
+    """Build a sub-conflict dict using the parent conflict's batch/sub coordinates."""
+    parent_batch_id = conflict["from"]["start"][1]
+    parent_sub_id = conflict["from"]["start"][2]
+    return {
+        "from": {
+            "start": (from_start_id, parent_batch_id, parent_sub_id),
+            "end": (from_end_id, parent_batch_id, parent_sub_id),
+        },
+        "to": {
+            "start": (to_start_id, parent_batch_id, parent_sub_id),
+            "end": (to_end_id, parent_batch_id, parent_sub_id),
+        },
+    }
+
+
+def squash_conflict_with_splitting(
+    db_path,
+    conflict,
+    model_name,
+    show_logs=False,
+    model=None,
+    use_proxy_from=False,
+    use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
+    power_scoring_exponent=0.6,
+    _depth=0,
+):
+    """Find the best solution for a large conflict by splitting via DP anchors.
+
+    Same return signature as squash_conflict: (solution, lines_from, lines_to).
+    """
+    from_start = conflict["from"]["start"][0]
+    from_end = conflict["from"]["end"][0]
+    to_start = conflict["to"]["start"][0]
+    to_end = conflict["to"]["end"][0]
+
+    splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
+        db_path, from_start, from_end,
+    )
+    splitted_to, proxy_to = helper.get_splitted_to_by_id_range(
+        db_path, to_start, to_end,
+    )
+
+    # Find anchors
+    doc_anchors, from_ids, to_ids = find_conflict_anchors(
+        db_path, conflict, use_proxy_from, use_proxy_to,
+    )
+
+    if not doc_anchors:
+        n = from_end - from_start + 1
+        m = to_end - to_start + 1
+        if n <= MAX_DIRECT_RESOLVE_SIZE and m <= MAX_DIRECT_RESOLVE_SIZE:
+            logging.info(
+                "No anchors for conflict %d-%d : %d-%d (small enough for direct resolve)",
+                from_start, from_end, to_start, to_end,
+            )
+            return _squash_conflict_direct(
+                db_path, conflict, model_name, show_logs, model,
+                use_proxy_from, use_proxy_to, lang_emb_from, lang_emb_to,
+                use_aggregation, aggregation_method, power_scoring_exponent,
+            )
+
+        # Conflict is too large for brute-force — try DP with lower threshold
+        sim_matrix, sim_from_ids, sim_to_ids = compute_conflict_sim_matrix(
+            db_path, conflict, use_proxy_from, use_proxy_to,
+        )
+        if sim_matrix.size > 0:
+            # Retry with progressively lower thresholds
+            for retry_threshold in [0.35, 0.2]:
+                retry_anchors = penalized_dp_anchors(
+                    sim_matrix, anchor_threshold=retry_threshold,
+                )
+                if retry_anchors:
+                    doc_anchors = [
+                        (sim_from_ids[fi], sim_to_ids[ti], conf)
+                        for fi, ti, conf in retry_anchors
+                    ]
+                    logging.info(
+                        "Retry with threshold=%.2f found %d anchor(s) for conflict %d-%d : %d-%d",
+                        retry_threshold, len(doc_anchors), from_start, from_end, to_start, to_end,
+                    )
+                    break
+
+        if not doc_anchors:
+            # Last resort: use the DP path itself as the alignment solution
+            logging.info(
+                "No anchors even at low threshold for conflict %d-%d : %d-%d, "
+                "using DP path as solution",
+                from_start, from_end, to_start, to_end,
+            )
+            if sim_matrix.size > 0:
+                path = _run_penalized_dp(sim_matrix)
+                solution = dp_path_to_solution(path, sim_from_ids, sim_to_ids)
+            else:
+                # Degenerate: no embeddings — merge everything
+                solution = [(
+                    tuple(range(from_start, from_end + 1)),
+                    tuple(range(to_start, to_end + 1)),
+                )]
+            return solution, splitted_from, splitted_to
+
+    logging.info(
+        "Splitting conflict %d-%d : %d-%d with %d anchor(s)",
+        from_start, from_end, to_start, to_end, len(doc_anchors),
+    )
+
+    # Build sub-regions: gaps between anchors + anchor pairs
+    combined_solution = []
+    prev_f = from_start
+    prev_t = to_start
+
+    resolve_kwargs = dict(
+        model_name=model_name, show_logs=show_logs, model=model,
+        use_proxy_from=use_proxy_from, use_proxy_to=use_proxy_to,
+        lang_emb_from=lang_emb_from, lang_emb_to=lang_emb_to,
+        use_aggregation=use_aggregation, aggregation_method=aggregation_method,
+        power_scoring_exponent=power_scoring_exponent,
+    )
+
+    for anchor_f, anchor_t, anchor_conf in doc_anchors:
+        # Gap before this anchor
+        gap_f_start, gap_f_end = prev_f, anchor_f - 1
+        gap_t_start, gap_t_end = prev_t, anchor_t - 1
+        gap_n = gap_f_end - gap_f_start + 1
+        gap_m = gap_t_end - gap_t_start + 1
+
+        if gap_n > 0 and gap_m > 0:
+            gap_conflict = _build_sub_conflict(
+                conflict, gap_f_start, gap_f_end, gap_t_start, gap_t_end,
+            )
+            gap_solution = _resolve_sub_conflict(
+                db_path, gap_conflict, _depth=_depth, **resolve_kwargs,
+            )
+            combined_solution.extend(gap_solution)
+        elif gap_n > 0:
+            # Extra from-lines with no to-lines: merge them into the anchor
+            combined_solution.append(
+                (tuple(range(gap_f_start, anchor_f + 1)), (anchor_t,))
+            )
+            prev_f = anchor_f + 1
+            prev_t = anchor_t + 1
+            continue
+        elif gap_m > 0:
+            # Extra to-lines with no from-lines: merge them into the anchor
+            combined_solution.append(
+                ((anchor_f,), tuple(range(gap_t_start, anchor_t + 1)))
+            )
+            prev_f = anchor_f + 1
+            prev_t = anchor_t + 1
+            continue
+
+        # The anchor itself: 1:1 pair
+        combined_solution.append(((anchor_f,), (anchor_t,)))
+        prev_f = anchor_f + 1
+        prev_t = anchor_t + 1
+
+    # Trailing gap after last anchor
+    if prev_f <= from_end and prev_t <= to_end:
+        tail_conflict = _build_sub_conflict(
+            conflict, prev_f, from_end, prev_t, to_end,
+        )
+        tail_solution = _resolve_sub_conflict(
+            db_path, tail_conflict, _depth=_depth, **resolve_kwargs,
+        )
+        combined_solution.extend(tail_solution)
+    elif prev_f <= from_end:
+        # Extra trailing from-lines: merge into last pair
+        if combined_solution:
+            last_from, last_to = combined_solution[-1]
+            combined_solution[-1] = (
+                last_from + tuple(range(prev_f, from_end + 1)),
+                last_to,
+            )
+        else:
+            combined_solution.append(
+                (tuple(range(prev_f, from_end + 1)), (to_end,))
+            )
+    elif prev_t <= to_end:
+        # Extra trailing to-lines: merge into last pair
+        if combined_solution:
+            last_from, last_to = combined_solution[-1]
+            combined_solution[-1] = (
+                last_from,
+                last_to + tuple(range(prev_t, to_end + 1)),
+            )
+        else:
+            combined_solution.append(
+                ((from_end,), tuple(range(prev_t, to_end + 1)))
+            )
+
+    return combined_solution, splitted_from, splitted_to
+
+
+def _resolve_sub_conflict(
+    db_path,
+    sub_conflict,
+    model_name,
+    show_logs=False,
+    model=None,
+    use_proxy_from=False,
+    use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
+    power_scoring_exponent=0.6,
+    _depth=0,
+):
+    """Resolve a sub-conflict, recursing into splitting if still too large."""
+    n = sub_conflict["from"]["end"][0] - sub_conflict["from"]["start"][0] + 1
+    m = sub_conflict["to"]["end"][0] - sub_conflict["to"]["start"][0] + 1
+
+    if n <= 0 or m <= 0:
+        return []
+
+    # Trivial 1:1
+    if n == 1 and m == 1:
+        return [(
+            (sub_conflict["from"]["start"][0],),
+            (sub_conflict["to"]["start"][0],),
+        )]
+
+    if n > MAX_DIRECT_RESOLVE_SIZE or m > MAX_DIRECT_RESOLVE_SIZE:
+        if _depth < 3:
+            solution, _, _ = squash_conflict_with_splitting(
+                db_path, sub_conflict, model_name, show_logs, model,
+                use_proxy_from, use_proxy_to, lang_emb_from, lang_emb_to,
+                use_aggregation, aggregation_method, power_scoring_exponent,
+                _depth=_depth + 1,
+            )
+            return solution
+
+        # Max recursion depth — use DP path directly instead of brute-force
+        logging.info(
+            "Max split depth reached for sub-conflict %d-%d : %d-%d, using DP path",
+            sub_conflict["from"]["start"][0], sub_conflict["from"]["end"][0],
+            sub_conflict["to"]["start"][0], sub_conflict["to"]["end"][0],
+        )
+        sim_matrix, from_ids, to_ids = compute_conflict_sim_matrix(
+            db_path, sub_conflict, use_proxy_from, use_proxy_to,
+        )
+        if sim_matrix.size > 0:
+            path = _run_penalized_dp(sim_matrix)
+            return dp_path_to_solution(path, from_ids, to_ids)
+        # Degenerate fallback
+        return [(
+            tuple(range(sub_conflict["from"]["start"][0], sub_conflict["from"]["end"][0] + 1)),
+            tuple(range(sub_conflict["to"]["start"][0], sub_conflict["to"]["end"][0] + 1)),
+        )]
+
+    # Small enough: use direct variant enumeration
+    solution, _, _ = _squash_conflict_direct(
+        db_path, sub_conflict, model_name, show_logs, model,
+        use_proxy_from, use_proxy_to, lang_emb_from, lang_emb_to,
+        use_aggregation, aggregation_method, power_scoring_exponent,
+    )
+    return solution
+
+
+def _squash_conflict_direct(
+    db_path,
+    conflict,
+    model_name,
+    show_logs=False,
+    model=None,
+    use_proxy_from=False,
+    use_proxy_to=False,
+    lang_emb_from="ell_Grek",
+    lang_emb_to="ell_Grek",
+    use_aggregation=False,
+    aggregation_method="weighted_average",
+    power_scoring_exponent=0.6,
+):
+    """Original brute-force variant enumeration for small conflicts."""
+    splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
+        db_path, conflict["from"]["start"][0], conflict["from"]["end"][0]
+    )
+    splitted_to, proxy_to = helper.get_splitted_to_by_id_range(
+        db_path, conflict["to"]["start"][0], conflict["to"]["end"][0]
+    )
+
+    variants_ids = get_variants(conflict, show_logs)
+    unique_variants = helper.get_unique_variants(variants_ids)
+
+    vec_lines_from = proxy_from if use_proxy_from else splitted_from
+    vec_lines_to = proxy_to if use_proxy_to else splitted_to
+
+    vecs_from, vecs_to = get_vectors(
+        db_path, unique_variants, vec_lines_from, vec_lines_to,
+        model_name, model, lang_emb_from, lang_emb_to,
+        use_proxy_from=use_proxy_from, use_proxy_to=use_proxy_to,
+        use_aggregation=use_aggregation, aggregation_method=aggregation_method,
+    )
+
+    unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
+
+    for key in unique_sims:
+        from_ids, to_ids = key
+        text_from = helper.get_string(splitted_from, from_ids)
+        text_to = helper.get_string(splitted_to, to_ids)
+        unique_sims[key] += punct_sim.punct_bonus_for_texts(text_from, text_to)
+
+    variant_sims = [
+        sum(unique_sims[id] for id in ids) / (len(ids) ** power_scoring_exponent)
+        for ids in variants_ids
+    ]
+    best_var_index = int(np.argmax(variant_sims))
+
+    return variants_ids[best_var_index], splitted_from, splitted_to
+
+
+# ---------------------------------------------------------------------------
+# Negative-length conflict expansion
+# ---------------------------------------------------------------------------
+
+
+def fix_negative_conflicts(db_path, conflicts, batch_id=-1):
+    """Fix conflicts with negative length by expanding their boundaries.
+
+    Instead of the old +1 increment hack, this expands overlapping regions
+    into valid positive-length conflicts by swapping boundaries and adjusting
+    the doc_index to remove confused entries in the overlap zone.
+
+    Returns the number of fixed conflicts.
+    """
+    negative_conflicts = []
+    for c in conflicts:
+        len_from = c["from"]["end"][0] - c["from"]["start"][0]
+        len_to = c["to"]["end"][0] - c["to"]["start"][0]
+        if len_from < 0 or len_to < 0:
+            negative_conflicts.append(c)
+
+    if not negative_conflicts:
+        return 0
+
+    logging.info("Fixing %d negative-length conflict(s) by boundary expansion", len(negative_conflicts))
+
+    with sqlite3.connect(db_path) as db:
+        index = aligner.get_doc_index(db)
+
+    fixed = 0
+    for c in negative_conflicts:
+        f_start = c["from"]["start"][0]
+        f_end = c["from"]["end"][0]
+        t_start = c["to"]["start"][0]
+        t_end = c["to"]["end"][0]
+
+        # Get the batch_id and sub_id coordinates
+        start_batch = c["from"]["start"][1]
+        start_sub = c["from"]["start"][2]
+        end_batch = c["from"]["end"][1]
+        end_sub = c["from"]["end"][2]
+
+        # Expand: ensure start <= end on both sides
+        new_f_start = min(f_start, f_end)
+        new_f_end = max(f_start, f_end)
+        new_t_start = min(t_start, t_end)
+        new_t_end = max(t_start, t_end)
+
+        # Fix the index entries at the conflict boundaries.
+        # The start boundary entry has to_ids pointing backwards — adjust it
+        # to point forward by setting its to_ids to [new_t_start].
+        if start_batch < len(index) and start_sub < len(index[start_batch]):
+            entry = list(index[start_batch][start_sub])
+            to_ids = json.loads(entry[3])
+            # Replace with the corrected minimum to_id
+            corrected_to = [new_t_start] + [x for x in to_ids if x > new_t_start]
+            if not corrected_to:
+                corrected_to = [new_t_start]
+            entry[3] = json.dumps(corrected_to)
+            index[start_batch][start_sub] = entry
+            fixed += 1
+
+    if fixed > 0:
+        logging.info("Expanded %d negative conflict(s), updating index", fixed)
+        with sqlite3.connect(db_path) as db:
+            aligner.update_doc_index(db, index)
+
+    return fixed
+
+
 def get_conflict_coordinates(conflict):
     """Get conflict coordinates"""
     return (conflict["from"]["start"][1], conflict["from"]["start"][2]), (
@@ -274,65 +973,22 @@ def squash_conflict(
     aggregation_method="weighted_average",
     power_scoring_exponent=0.6,
 ):
-    """Find the best solution"""
-    splitted_from, proxy_from = helper.get_splitted_from_by_id_range(
-        db_path, conflict["from"]["start"][0], conflict["from"]["end"][0]
+    """Find the best solution (auto-dispatches to splitting for large conflicts)."""
+    n = conflict["from"]["end"][0] - conflict["from"]["start"][0] + 1
+    m = conflict["to"]["end"][0] - conflict["to"]["start"][0] + 1
+
+    if n > MAX_DIRECT_RESOLVE_SIZE or m > MAX_DIRECT_RESOLVE_SIZE:
+        return squash_conflict_with_splitting(
+            db_path, conflict, model_name, show_logs, model,
+            use_proxy_from, use_proxy_to, lang_emb_from, lang_emb_to,
+            use_aggregation, aggregation_method, power_scoring_exponent,
+        )
+
+    return _squash_conflict_direct(
+        db_path, conflict, model_name, show_logs, model,
+        use_proxy_from, use_proxy_to, lang_emb_from, lang_emb_to,
+        use_aggregation, aggregation_method, power_scoring_exponent,
     )
-    splitted_to, proxy_to = helper.get_splitted_to_by_id_range(
-        db_path, conflict["to"]["start"][0], conflict["to"]["end"][0]
-    )
-
-    variants_ids = get_variants(conflict, show_logs)
-    unique_variants = helper.get_unique_variants(variants_ids)
-
-    vec_lines_from = proxy_from if use_proxy_from else splitted_from
-    vec_lines_to = proxy_to if use_proxy_to else splitted_to
-
-    vecs_from, vecs_to = get_vectors(
-        db_path,
-        unique_variants,
-        vec_lines_from,
-        vec_lines_to,
-        model_name,
-        model,
-        lang_emb_from,
-        lang_emb_to,
-        use_proxy_from=use_proxy_from,
-        use_proxy_to=use_proxy_to,
-        use_aggregation=use_aggregation,
-        aggregation_method=aggregation_method,
-    )
-
-    unique_sims = get_unique_sims(unique_variants, vecs_from, vecs_to)
-
-    # Add punctuation-based bonus to similarity scores
-    for key in unique_sims:
-        from_ids, to_ids = key
-        text_from = helper.get_string(splitted_from, from_ids)
-        text_to = helper.get_string(splitted_to, to_ids)
-        unique_sims[key] += punct_sim.punct_bonus_for_texts(text_from, text_to)
-
-    # Power scoring: sum/k^power_scoring_exponent — balances cross-group-count comparison
-    # so extended both-side partitioning can find lower-k solutions when appropriate.
-    variant_sims = [
-        sum(unique_sims[id] for id in ids) / (len(ids) ** power_scoring_exponent)
-        for ids in variants_ids
-    ]
-    best_var_index = int(np.argmax(variant_sims))
-
-    if show_logs:
-        print("best variant:")
-        print(variants_ids[best_var_index])
-        print("\n---------------------------------------\n")
-        for ids in variants_ids[best_var_index]:
-            print(
-                helper.get_string(splitted_from, ids[0]),
-                "<=>",
-                helper.get_string(splitted_to, ids[1]),
-                "\n",
-            )
-
-    return variants_ids[best_var_index], splitted_from, splitted_to
 
 
 def resolve_conflict(
