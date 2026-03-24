@@ -4,7 +4,6 @@ import logging
 import re
 
 import razdel
-import sentencex
 
 from lingtrain_aligner import preprocessor
 
@@ -64,8 +63,6 @@ pattern_ru_orig = re.compile(r"[\/\<\>•\'\n]+")
 double_spaces = re.compile(r"[\s]{2,}")
 double_commas = re.compile(r"[,]{2,}")
 double_dash = re.compile(r"[-—]{2,}")
-# Normalize all non-ASCII quote styles that confuse sentencex:
-# »« (guillemets), „" (low-9/left), "" (curly double)
 fancy_quotes = re.compile(r"[»«\u201e\u201c\u201d]+")
 quotes = re.compile(r"[\u201c\u201d\u201e\u201f]+")
 pattern_zh = re.compile(
@@ -101,16 +98,6 @@ def split_by_razdel(line):
     """Split line using 'razdel' library (best for Russian and Cyrillic-script languages)"""
     return list(x.text for x in razdel.sentenize(line))
 
-
-# sentencex uses ISO 639-1 codes; map our custom codes
-_SENTENCEX_CODE_MAP = {"bu": "be", "cz": "cs", "sw": "sv"}
-
-
-def split_by_sentencex(line, langcode="xx"):
-    """Split using sentencex (Wikimedia) — multilingual, ~300 languages, fast."""
-    sx_code = _SENTENCEX_CODE_MAP.get(langcode, langcode)
-    sentences = list(sentencex.segment(sx_code, line))
-    return [s for s in sentences if s.strip()]
 
 
 def split_zh(line):
@@ -219,14 +206,6 @@ def split_ar(line):
     return [s.strip() for s in res if s.strip()]
 
 
-def _make_sentencex_splitter(langcode):
-    """Create a closure that splits using sentencex for a specific language."""
-    sx_code = _SENTENCEX_CODE_MAP.get(langcode, langcode)
-    def splitter(line):
-        sentences = list(sentencex.segment(sx_code, line))
-        return [s for s in sentences if s.strip()]
-    return splitter
-
 
 def after_fr(lines):
     """Get French orthography into account"""
@@ -277,7 +256,7 @@ def get_substrings(line, sep, endings, res):
         get_substrings(parts[0], parts[1], endings, res)
         get_substrings(parts[2], sep, endings, res)
     else:
-        if line:
+        if line.strip():
             res.append(line + sep)
 
 
@@ -337,14 +316,6 @@ CYRILLIC_LANG_CODES = {
     "kjh", # Khakas
 }
 
-# Languages with sentencex + quote normalization preprocessing.
-# sentencex is fast (~same as razdel) and handles abbreviations, ordinals, etc.
-# Quote normalization is needed because sentencex gets confused by guillemets/low-9 quotes.
-SENTENCEX_LANG_CODES = {
-    "en", "fr", "es", "it", "pt", "nl", "pl",
-    "hu", "cz", "tr", "sw", "da", "el", "sk",
-}
-
 splitter_fn = {
     JP_CODE: split_jp,
     ZH_CODE: split_zh,
@@ -357,29 +328,12 @@ splitter_fn = {
 for _cc in CYRILLIC_LANG_CODES:
     splitter_fn[_cc] = split_by_razdel
 
-# Route Western European / Latin-script languages to sentencex
-for _lc in SENTENCEX_LANG_CODES:
-    splitter_fn[_lc] = _make_sentencex_splitter(_lc)
-
-# Preprocessing rules.
-# German/French/etc. need quote normalization so sentencex can split correctly
-# (sentencex gets confused by »...« guillemets and „..." low-9 quotes).
-# Normalize three-dot ellipsis to single character (sentencex handles … but splits on ...)
-_ellipsis_dots = re.compile(r"\.{3}")
-
-_SENTENCEX_PREPROCESSING = [(fancy_quotes, '"'), (_ellipsis_dots, "\u2026"), *DEFAULT_PREPROCESSING]
-
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
     ZH_CODE: [(pattern_zh, "")],
     JP_CODE: [(pat_comma, "\u3002"), (pattern_jp, "")],
 }
 
-# All sentencex languages get quote normalization preprocessing
-for _lc in SENTENCEX_LANG_CODES:
-    preprocessing_rules[_lc] = _SENTENCEX_PREPROCESSING
-
-# Postprocessing: not needed — sentencex handles splitting natively.
 postprocessing_rules = {}
 
 
@@ -389,9 +343,8 @@ def split_by_sentences(lines, langcode, clean_text=True):
     if langcode in splitter_fn:
         split_fn = splitter_fn[langcode]
     else:
-        # Default fallback: sentencex — supports ~300 languages with
-        # script-aware sentence boundary detection
-        split_fn = lambda l: split_by_sentencex(l, langcode)
+        # Default fallback: razdel
+        split_fn = split_by_razdel
     after_fn = postprocessing_rules.get(langcode, lambda x: x)
 
     if clean_text:

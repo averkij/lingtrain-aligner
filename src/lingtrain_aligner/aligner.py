@@ -1494,6 +1494,9 @@ def handle_marks(lines):
         update_meta(meta, line, meta_par_ids, marks_counter[preprocessor.PARAGRAPH])
 
         if not line.endswith(get_all_extraction_endings()):
+            if not line:
+                # Skip empty lines that may slip through from splitting
+                continue
             marks = (
                 marks_counter[preprocessor.PARAGRAPH],
                 marks_counter[preprocessor.H1],
