@@ -4,7 +4,6 @@ import logging
 import re
 
 import razdel
-import pysbd
 import sentencex
 
 from lingtrain_aligner import preprocessor
@@ -65,16 +64,18 @@ pattern_ru_orig = re.compile(r"[\/\<\>•\'\n]+")
 double_spaces = re.compile(r"[\s]{2,}")
 double_commas = re.compile(r"[,]{2,}")
 double_dash = re.compile(r"[-—]{2,}")
-german_quotes = re.compile(r"[»«“„]+")
-quotes = re.compile(r"[“”„‟]+")
+# Normalize all non-ASCII quote styles that confuse sentencex:
+# »« (guillemets), „" (low-9/left), "" (curly double)
+fancy_quotes = re.compile(r"[»«\u201e\u201c\u201d]+")
+quotes = re.compile(r"[\u201c\u201d\u201e\u201f]+")
 pattern_zh = re.compile(
-    r"[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+"
+    r"[」「\u201c\u201d\u201e\u201f\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—''‛‧﹏〉]+"
 )
 pattern_zh_total = re.compile(
-    r"[」「“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+"
+    r"[」「\u201c\u201d\u201e\u201f\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—''‛‧﹏〉]+"
 )
 pattern_jp = re.compile(
-    r"[“”„‟\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—‘’‛‧﹏〉]+"
+    r"[\u201c\u201d\u201e\u201f\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*a-zA-Zа-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇（）＊＋－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—''‛‧﹏〉]+"
 )
 pat_comma = re.compile(r"[\.]+")
 first_numbers = re.compile(r"^[0-9,\.]+")
@@ -97,15 +98,17 @@ def is_lang_code_valid(langcode):
 
 
 def split_by_razdel(line):
-    """Split line using 'razdel' library"""
+    """Split line using 'razdel' library (best for Russian and Cyrillic-script languages)"""
     return list(x.text for x in razdel.sentenize(line))
 
 
+# sentencex uses ISO 639-1 codes; map our custom codes
+_SENTENCEX_CODE_MAP = {"bu": "be", "cz": "cs", "sw": "sv"}
+
+
 def split_by_sentencex(line, langcode="xx"):
-    """Split using sentencex multilingual fallback"""
-    # sentencex uses ISO 639-1 codes; map our custom codes
-    code_map = {"bu": "be", "cz": "cs", "sw": "sv"}
-    sx_code = code_map.get(langcode, langcode)
+    """Split using sentencex (Wikimedia) — multilingual, ~300 languages, fast."""
+    sx_code = _SENTENCEX_CODE_MAP.get(langcode, langcode)
     sentences = list(sentencex.segment(sx_code, line))
     return [s for s in sentences if s.strip()]
 
@@ -139,42 +142,89 @@ def split_ko(line):
     return [s for s in res if s.strip()]
 
 
+# --- German custom splitter ---
+# German abbreviations that end with a period but are NOT sentence boundaries.
+_DE_ABBREVIATIONS = {
+    # Titles
+    "dr", "prof", "hr", "fr", "ing", "dipl", "mag",
+    # Common abbreviations
+    "bzw", "ca", "evtl", "ggf", "inkl", "nr", "str", "abs", "bd",
+    "hrsg", "usw", "usf", "vgl", "sog", "bes", "geb", "gest",
+    "tel", "fax", "orig", "hauptstr", "kirchenstr", "bahnhofstr",
+    "anm", "aufl", "bearb", "dgl", "ebd", "gem", "kap", "erg",
+    "jan", "feb", "m\u00e4r", "apr", "jun", "jul", "aug", "sep",
+    "sept", "okt", "nov", "dez",
+    # Single letters used in multi-part abbreviations (z.B., d.h., u.a., etc.)
+    "z", "d", "u", "o", "s", "m", "i", "v", "n", "a", "b", "e", "h",
+}
+
+# Pattern to find candidate sentence-end positions: . ! ? followed by space+uppercase
+# or followed by space+quote+uppercase, or at end of text.
+_de_split_candidate = re.compile(
+    r'([.!?]["\'\u00bb\u00ab\u201c\u201d\u201e]*)\s+'
+)
+
+
+def split_de(line):
+    """Split German text into sentences with abbreviation and ordinal awareness."""
+    # Normalize German quotes for consistent handling
+    line = re.sub(r'[\u00bb\u00ab\u201e\u201c\u201d]+', '"', line)
+    # Normalize triple-dot ellipsis to single character
+    line = re.sub(r'\.{3,}', '\u2026', line)
+
+    # Find all candidate split positions
+    sentences = []
+    last = 0
+    for m in _de_split_candidate.finditer(line):
+        end_pos = m.end()  # position after the space
+        punct_start = m.start()
+
+        # Only check abbreviation/ordinal rules for periods (not ! or ?)
+        if m.group(1)[0] == '.':
+            before = line[last:punct_start]
+            token_match = re.search(r'(\S+)$', before)
+            if token_match:
+                raw_token = token_match.group(1)
+                token = raw_token.lower().rstrip('.')
+
+                # Skip known abbreviations
+                if token in _DE_ABBREVIATIONS:
+                    continue
+
+                # Skip ordinals: bare digits before period (3. Januar)
+                if re.match(r'^\d+$', raw_token):
+                    continue
+
+                # Skip multi-part abbreviations: x.Y pattern (z.B, d.h, u.a, etc.)
+                if re.match(r'^[a-z\u00e4\u00f6\u00fc]\.[a-zA-Z\u00c4\u00d6\u00dc]$', raw_token, re.I):
+                    continue
+
+        # This is a real sentence boundary
+        sentence = line[last:end_pos].strip()
+        if sentence:
+            sentences.append(sentence)
+        last = end_pos
+
+    # Add remaining text
+    remainder = line[last:].strip()
+    if remainder:
+        sentences.append(remainder)
+
+    return [s for s in sentences if s]
+
+
 def split_ar(line):
     """Split line in Arabic (handles Arabic question mark U+061F)"""
     res = list(re.findall(r"[^!?\u061f\.\!\?]+[!?\u061f\.\!\?]?", line, flags=re.U))
     return [s.strip() for s in res if s.strip()]
 
 
-# --- pySBD-backed splitting ---
-_PYSBD_LANG_MAP = {
-    "en": "en", "de": "de", "fr": "fr", "es": "es",
-    "it": "it", "nl": "nl", "pl": "pl",
-}
-
-_pysbd_segmenter_cache = {}
-
-
-def _get_pysbd_segmenter(langcode):
-    """Get or create a cached pySBD segmenter for the given language."""
-    pysbd_lang = _PYSBD_LANG_MAP.get(langcode, "en")
-    if pysbd_lang not in _pysbd_segmenter_cache:
-        _pysbd_segmenter_cache[pysbd_lang] = pysbd.Segmenter(
-            language=pysbd_lang, clean=False
-        )
-    return _pysbd_segmenter_cache[pysbd_lang]
-
-
-def split_by_pysbd(line, langcode):
-    """Split using pySBD for supported Western European languages."""
-    seg = _get_pysbd_segmenter(langcode)
-    sentences = seg.segment(line)
-    return [s for s in sentences if s.strip()]
-
-
-def _make_pysbd_splitter(langcode):
-    """Create a closure that splits using pySBD for a specific language."""
+def _make_sentencex_splitter(langcode):
+    """Create a closure that splits using sentencex for a specific language."""
+    sx_code = _SENTENCEX_CODE_MAP.get(langcode, langcode)
     def splitter(line):
-        return split_by_pysbd(line, langcode)
+        sentences = list(sentencex.segment(sx_code, line))
+        return [s for s in sentences if s.strip()]
     return splitter
 
 
@@ -257,7 +307,8 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     return res
 
 
-# Cyrillic-script language codes for razdel
+# Cyrillic-script language codes — razdel is purpose-built for Russian and works
+# well for all languages using Russian-style Cyrillic punctuation.
 CYRILLIC_LANG_CODES = {
     "ru",  # Russian
     "bu",  # Belarusian
@@ -286,32 +337,49 @@ CYRILLIC_LANG_CODES = {
     "kjh", # Khakas
 }
 
+# Languages with sentencex + quote normalization preprocessing.
+# sentencex is fast (~same as razdel) and handles abbreviations, ordinals, etc.
+# Quote normalization is needed because sentencex gets confused by guillemets/low-9 quotes.
+SENTENCEX_LANG_CODES = {
+    "en", "fr", "es", "it", "pt", "nl", "pl",
+    "hu", "cz", "tr", "sw", "da", "el", "sk",
+}
+
 splitter_fn = {
     JP_CODE: split_jp,
     ZH_CODE: split_zh,
     HY_CODE: split_hy,
     KO_CODE: split_ko,
+    DE_CODE: split_de,
 }
 
-# Route all Cyrillic-script languages to razdel
+# Route Cyrillic-script languages to razdel
 for _cc in CYRILLIC_LANG_CODES:
     splitter_fn[_cc] = split_by_razdel
 
-# Add pySBD-backed splitters for Western European languages
-for _lc in _PYSBD_LANG_MAP:
-    splitter_fn[_lc] = _make_pysbd_splitter(_lc)
+# Route Western European / Latin-script languages to sentencex
+for _lc in SENTENCEX_LANG_CODES:
+    splitter_fn[_lc] = _make_sentencex_splitter(_lc)
 
-# Preprocessing: pySBD languages use DEFAULT_PREPROCESSING only (no razdel workarounds).
-# German quote normalization and date-period protection were razdel workarounds — pySBD
-# handles ordinals, abbreviations, and quotes natively.
+# Preprocessing rules.
+# German/French/etc. need quote normalization so sentencex can split correctly
+# (sentencex gets confused by »...« guillemets and „..." low-9 quotes).
+# Normalize three-dot ellipsis to single character (sentencex handles … but splits on ...)
+_ellipsis_dots = re.compile(r"\.{3}")
+
+_SENTENCEX_PREPROCESSING = [(fancy_quotes, '"'), (_ellipsis_dots, "\u2026"), *DEFAULT_PREPROCESSING]
+
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
     ZH_CODE: [(pattern_zh, "")],
     JP_CODE: [(pat_comma, "\u3002"), (pattern_jp, "")],
 }
 
-# Postprocessing: pySBD handles French guillemets and German dates natively —
-# no postprocessing needed for pySBD languages.
+# All sentencex languages get quote normalization preprocessing
+for _lc in SENTENCEX_LANG_CODES:
+    preprocessing_rules[_lc] = _SENTENCEX_PREPROCESSING
+
+# Postprocessing: not needed — sentencex handles splitting natively.
 postprocessing_rules = {}
 
 
@@ -321,7 +389,7 @@ def split_by_sentences(lines, langcode, clean_text=True):
     if langcode in splitter_fn:
         split_fn = splitter_fn[langcode]
     else:
-        # Default: sentencex (Wikimedia) — supports ~300 languages with
+        # Default fallback: sentencex — supports ~300 languages with
         # script-aware sentence boundary detection
         split_fn = lambda l: split_by_sentencex(l, langcode)
     after_fn = postprocessing_rules.get(langcode, lambda x: x)
@@ -333,8 +401,8 @@ def split_by_sentences(lines, langcode, clean_text=True):
 
     sentences = preprocess(line, pre_rules, split_fn, after_fn)
 
-    if sentences[-1].strip() == "":
-        sentences = sentences[:-1]
+    # Filter empty sentences
+    sentences = [s for s in sentences if s.strip()]
 
     return sentences
 
