@@ -63,7 +63,7 @@ pattern_ru_orig = re.compile(r"[\/\<\>•\'\n]+")
 double_spaces = re.compile(r"[\s]{2,}")
 double_commas = re.compile(r"[,]{2,}")
 double_dash = re.compile(r"[-—]{2,}")
-fancy_quotes = re.compile(r"[»«\u201e\u201c\u201d]+")
+german_quotes = re.compile(r"[»«\u201e\u201c\u201d]+")
 quotes = re.compile(r"[\u201c\u201d\u201e\u201f]+")
 pattern_zh = re.compile(
     r"[」「\u201c\u201d\u201e\u201f\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—''‛‧﹏〉]+"
@@ -109,9 +109,9 @@ def split_jp(line):
     """Split line in Japanese"""
     res = list(re.findall(r"[^!?。！？\.\!\?]+[!?。！？\.\!\?]?", line, flags=re.U))
     for i, x in enumerate(res):
-        if x and x[0] == "」":
+        if i > 0 and x and x[0] == "」":
             res[i - 1] = res[i - 1] + "」"
-            res[i] = res[i][1:]
+            res[i] = res[i][1:].lstrip()
     return res
 
 
@@ -210,14 +210,14 @@ def split_ar(line):
 def after_fr(lines):
     """Get French orthography into account"""
     for i, x in enumerate(lines):
-        if x and x[0] == "»":
+        if i > 0 and x and x[0] == "»":
             lines[i - 1] = lines[i - 1] + " »"
-            lines[i] = lines[i][1:]
+            lines[i] = lines[i][1:].lstrip()
     return lines
 
 
 def after_de(lines):
-    """Some wierd German stuff"""
+    """Restore German date punctuation hidden during preprocessing."""
     return preprocess_raw(lines, [(german_bdates, r"\1\2.\3\4")])
 
 
@@ -330,11 +330,16 @@ for _cc in CYRILLIC_LANG_CODES:
 
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
+    DE_CODE: [
+        (german_quotes, '"'),
+        (german_dates, rf"\1\2{german_foo}\3\4"),
+        *DEFAULT_PREPROCESSING,
+    ],
     ZH_CODE: [(pattern_zh, "")],
     JP_CODE: [(pat_comma, "\u3002"), (pattern_jp, "")],
 }
 
-postprocessing_rules = {}
+postprocessing_rules = {FR_CODE: after_fr, DE_CODE: after_de}
 
 
 def split_by_sentences(lines, langcode, clean_text=True):
