@@ -35,3 +35,29 @@ def test_split_by_sentences_masks_and_restores_german_dates(monkeypatch):
 
     assert f"3{splitter.german_foo} Januar" in seen["line"]
     assert sentences == ["Am 3. Januar ging es los."]
+
+
+def test_split_by_sentences_preserves_german_quotes():
+    """German splitting should preserve source quote glyphs."""
+
+    sentences = splitter.split_by_sentences(
+        ["\u201eHallo.\u201c Dann ging er."],
+        splitter.DE_CODE,
+    )
+
+    assert sentences == ["\u201eHallo.\u201c", "Dann ging er."]
+
+
+def test_split_by_sentences_and_save_preserves_german_quotes(tmp_path):
+    """The file save path should not normalize German quotes to ASCII quotes."""
+
+    raw_path = tmp_path / "raw.txt"
+    splitted_path = tmp_path / "split.txt"
+    raw_path.write_text("\u201eHallo.\u201c Dann ging er.", encoding="utf-8")
+
+    splitter.split_by_sentences_and_save(raw_path, splitted_path, splitter.DE_CODE)
+
+    assert splitted_path.read_text(encoding="utf-8").splitlines() == [
+        "\u201eHallo.\u201c",
+        "Dann ging er.",
+    ]

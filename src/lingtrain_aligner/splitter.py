@@ -63,8 +63,6 @@ pattern_ru_orig = re.compile(r"[\/\<\>•\'\n]+")
 double_spaces = re.compile(r"[\s]{2,}")
 double_commas = re.compile(r"[,]{2,}")
 double_dash = re.compile(r"[-—]{2,}")
-german_quotes = re.compile(r"[»«\u201e\u201c\u201d]+")
-quotes = re.compile(r"[\u201c\u201d\u201e\u201f]+")
 pattern_zh = re.compile(
     r"[」「\u201c\u201d\u201e\u201f\x1a⓪①②③④⑤⑥⑦⑧⑨⑩⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽*а-яА-Я\(\)\[\]\s\n\/\-\:•＂＃＄％＆＇＊＋－／＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》【】〔〕〖〗〘〙〜〟〰〾〿–—''‛‧﹏〉]+"
 )
@@ -154,8 +152,6 @@ _de_split_candidate = re.compile(
 
 def split_de(line):
     """Split German text into sentences with abbreviation and ordinal awareness."""
-    # Normalize German quotes for consistent handling
-    line = re.sub(r'[\u00bb\u00ab\u201e\u201c\u201d]+', '"', line)
     # Normalize triple-dot ellipsis to single character
     line = re.sub(r'\.{3,}', '\u2026', line)
 
@@ -331,7 +327,6 @@ for _cc in CYRILLIC_LANG_CODES:
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
     DE_CODE: [
-        (german_quotes, '"'),
         (german_dates, rf"\1\2{german_foo}\3\4"),
         *DEFAULT_PREPROCESSING,
     ],
@@ -379,7 +374,6 @@ def split_by_sentences_and_save(
             )
             langcode = XX_CODE
         lines = input_file.readlines()
-        lines = preprocess_raw(lines, [(quotes, '"')])
         if handle_marks:
             lines = preprocessor.mark_paragraphs(lines)
             sentences = split_by_sentences_wrapper(lines, langcode, clean_text)
