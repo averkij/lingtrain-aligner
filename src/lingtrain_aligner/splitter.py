@@ -4,6 +4,9 @@ import logging
 import re
 
 import razdel
+import pysbd
+import sentencex
+
 from lingtrain_aligner import preprocessor
 
 logger = logging.getLogger(__name__)
@@ -98,6 +101,15 @@ def split_by_razdel(line):
     return list(x.text for x in razdel.sentenize(line))
 
 
+def split_by_sentencex(line, langcode="xx"):
+    """Split using sentencex multilingual fallback"""
+    # sentencex uses ISO 639-1 codes; map our custom codes
+    code_map = {"bu": "be", "cz": "cs", "sw": "sv"}
+    sx_code = code_map.get(langcode, langcode)
+    sentences = list(sentencex.segment(sx_code, line))
+    return [s for s in sentences if s.strip()]
+
+
 def split_zh(line):
     """Split line in Chinese"""
     return list(re.findall(r"[^!?。！？\.\!\?]+[!?。！？\.\!\?]?", line, flags=re.U))
@@ -119,6 +131,51 @@ def split_hy(text):
     res = list(re.findall(r"[^։:…]+[։:…]?", text))
     res = [s.strip() for s in res if s.strip()]
     return res
+
+
+def split_ko(line):
+    """Split line in Korean (handles both full-width and half-width punctuation)"""
+    res = list(re.findall(r"[^!?\u3002\uff01\uff1f\.\!\?]+[!?\u3002\uff01\uff1f\.\!\?]?", line, flags=re.U))
+    return [s for s in res if s.strip()]
+
+
+def split_ar(line):
+    """Split line in Arabic (handles Arabic question mark U+061F)"""
+    res = list(re.findall(r"[^!?\u061f\.\!\?]+[!?\u061f\.\!\?]?", line, flags=re.U))
+    return [s.strip() for s in res if s.strip()]
+
+
+# --- pySBD-backed splitting ---
+_PYSBD_LANG_MAP = {
+    "en": "en", "de": "de", "fr": "fr", "es": "es",
+    "it": "it", "nl": "nl", "pl": "pl",
+}
+
+_pysbd_segmenter_cache = {}
+
+
+def _get_pysbd_segmenter(langcode):
+    """Get or create a cached pySBD segmenter for the given language."""
+    pysbd_lang = _PYSBD_LANG_MAP.get(langcode, "en")
+    if pysbd_lang not in _pysbd_segmenter_cache:
+        _pysbd_segmenter_cache[pysbd_lang] = pysbd.Segmenter(
+            language=pysbd_lang, clean=False
+        )
+    return _pysbd_segmenter_cache[pysbd_lang]
+
+
+def split_by_pysbd(line, langcode):
+    """Split using pySBD for supported Western European languages."""
+    seg = _get_pysbd_segmenter(langcode)
+    sentences = seg.segment(line)
+    return [s for s in sentences if s.strip()]
+
+
+def _make_pysbd_splitter(langcode):
+    """Create a closure that splits using pySBD for a specific language."""
+    def splitter(line):
+        return split_by_pysbd(line, langcode)
+    return splitter
 
 
 def after_fr(lines):
@@ -200,26 +257,73 @@ def split_by_sentences_wrapper(lines, langcode, clean_text=True):
     return res
 
 
-splitter_fn = {JP_CODE: split_jp, ZH_CODE: split_zh, HY_CODE: split_hy}
-
-preprocessing_rules = {
-    RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
-    DE_CODE: [
-        (german_quotes, '"'),
-        (german_dates, rf"\1\2{german_foo}\3\4"),
-        *DEFAULT_PREPROCESSING,
-    ],
-    ZH_CODE: [(pattern_zh, "")],
-    JP_CODE: [(pat_comma, "。"), (pattern_jp, "")],
+# Cyrillic-script language codes for razdel
+CYRILLIC_LANG_CODES = {
+    "ru",  # Russian
+    "bu",  # Belarusian
+    "uk",  # Ukrainian
+    "ba",  # Bashkir
+    "cv",  # Chuvash
+    "tt",  # Tatar
+    "kk",  # Kazakh
+    "ky",  # Kyrgyz
+    "uz",  # Uzbek
+    "sah", # Yakut
+    "kv",  # Komi
+    "udm", # Udmurt
+    "mhr", # Meadow Mari
+    "mrj", # Hill Mari
+    "myv", # Erzya
+    "mdf", # Moksha
+    "os",  # Ossetian
+    "inh", # Ingush
+    "bua", # Buryat
+    "xal", # Kalmyk
+    "sr",  # Serbian
+    "bg",  # Bulgarian
+    "mn",  # Mongolian
+    "alt", # Altai
+    "kjh", # Khakas
 }
 
-postprocessing_rules = {FR_CODE: after_fr, DE_CODE: after_de}
+splitter_fn = {
+    JP_CODE: split_jp,
+    ZH_CODE: split_zh,
+    HY_CODE: split_hy,
+    KO_CODE: split_ko,
+}
+
+# Route all Cyrillic-script languages to razdel
+for _cc in CYRILLIC_LANG_CODES:
+    splitter_fn[_cc] = split_by_razdel
+
+# Add pySBD-backed splitters for Western European languages
+for _lc in _PYSBD_LANG_MAP:
+    splitter_fn[_lc] = _make_pysbd_splitter(_lc)
+
+# Preprocessing: pySBD languages use DEFAULT_PREPROCESSING only (no razdel workarounds).
+# German quote normalization and date-period protection were razdel workarounds — pySBD
+# handles ordinals, abbreviations, and quotes natively.
+preprocessing_rules = {
+    RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
+    ZH_CODE: [(pattern_zh, "")],
+    JP_CODE: [(pat_comma, "\u3002"), (pattern_jp, "")],
+}
+
+# Postprocessing: pySBD handles French guillemets and German dates natively —
+# no postprocessing needed for pySBD languages.
+postprocessing_rules = {}
 
 
 def split_by_sentences(lines, langcode, clean_text=True):
     """Split line by sentences using language specific rules"""
     line = " ".join(lines)
-    split_fn = splitter_fn.get(langcode, split_by_razdel)
+    if langcode in splitter_fn:
+        split_fn = splitter_fn[langcode]
+    else:
+        # Default: sentencex (Wikimedia) — supports ~300 languages with
+        # script-aware sentence boundary detection
+        split_fn = lambda l: split_by_sentencex(l, langcode)
     after_fn = postprocessing_rules.get(langcode, lambda x: x)
 
     if clean_text:
