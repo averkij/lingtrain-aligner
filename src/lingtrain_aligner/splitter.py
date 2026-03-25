@@ -82,9 +82,18 @@ german_foo = "%@%"
 german_months = "Januar|Jänner|Janner|Februar|März|Marz|April|Mai|Juni|Juli|August|September|Oktober|October|November|Dezember"
 german_dates = re.compile(rf"(\s)(\d{{1,2}})\.(\s+)({german_months})")
 german_bdates = re.compile(rf"(\s)(\d{{1,2}}){german_foo}(\s+)({german_months})")
+# Normalize missing whitespace in patterns like '.— «Next' before handing
+# the text to razdel. The inserted space is stripped away by sentence trimming.
+sentence_end_before_dialogue_dash = re.compile(
+    r'([.!?\u2026]["\')\]\u00bb\u201d\u2019]*)(?=[\u2014\u2013-]\s*(?:[\u00ab\u201e\u201c"\(\[]\s*)?[A-Z\u0410-\u042f\u0401])'
+)
 
 
-DEFAULT_PREPROCESSING = [(double_spaces, " "), (double_commas, ","), (double_dash, "—")]
+DEFAULT_PREPROCESSING = [
+    (double_spaces, " "),
+    (double_commas, ","),
+    (double_dash, "—"),
+]
 
 
 def is_lang_code_valid(langcode):
@@ -94,6 +103,7 @@ def is_lang_code_valid(langcode):
 
 def split_by_razdel(line):
     """Split line using 'razdel' library (best for Russian and Cyrillic-script languages)"""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
     return list(x.text for x in razdel.sentenize(line))
 
 

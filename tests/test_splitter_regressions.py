@@ -61,3 +61,22 @@ def test_split_by_sentences_and_save_preserves_german_quotes(tmp_path):
         "\u201eHallo.\u201c",
         "Dann ging er.",
     ]
+
+
+def test_split_by_sentences_handles_adjacent_dialogue_dash_boundaries():
+    """Adjacent '.—' dialogue boundaries should still split into sentences."""
+
+    text = (
+        "— «Акулиной,— отвечала Лиза, стараясь освободить свои пальцы от руки "
+        "Алексеевой; — да пусти ж, барин; мне и домой пора».— «Ну, мой друг "
+        "Акулина, непременно буду в гости к твоему батюшке, к Василью-кузнецу»."
+        "— «Что ты? — возразила с живостию Лиза,— ради Христа, не приходи."
+    )
+
+    sentences = splitter.split_by_sentences([text], splitter.RU_CODE)
+
+    assert sentences == [
+        "— «Акулиной,— отвечала Лиза, стараясь освободить свои пальцы от руки Алексеевой; — да пусти ж, барин; мне и домой пора».",
+        "— «Ну, мой друг Акулина, непременно буду в гости к твоему батюшке, к Василью-кузнецу».",
+        "— «Что ты? — возразила с живостию Лиза,— ради Христа, не приходи.",
+    ]
