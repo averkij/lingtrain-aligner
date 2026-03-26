@@ -1205,7 +1205,8 @@ def get_doc_index(db):
         cur = db.execute("SELECT contents FROM doc_index")
         res = json.loads(cur.fetchone()[0])
     except:
-        logging.warning("can not fetch index db")
+        # logging.warning("can not fetch index db")
+        pass
     return res
 
 

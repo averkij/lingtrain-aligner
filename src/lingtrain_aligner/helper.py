@@ -363,7 +363,8 @@ def get_doc_index_original(db_path):
             cur = db.execute("SELECT contents FROM doc_index")
             res = json.loads(cur.fetchone()[0])
     except:
-        logging.warning("can not fetch index db")
+        # logging.warning("can not fetch index db")
+        pass
     return res
 
 
@@ -379,7 +380,8 @@ def get_flatten_doc_index(db_path, batch_ids=[]):
                 continue
             res.extend(list(zip(sub_index, range(len(sub_index)))))
     except:
-        logging.warning("can not fetch flatten index")
+        # logging.warning("can not fetch flatten index")
+        pass
     return res
 
 
@@ -396,7 +398,8 @@ def get_flatten_doc_index_with_batch_id(db_path, index=None):
                 list(zip(sub_index, range(len(sub_index)), [batch_id] * len(sub_index)))
             )
     except:
-        logging.warning("can not fetch flatten index")
+        # logging.warning("can not fetch flatten index")
+        pass
     return res
 
 
@@ -410,7 +413,8 @@ def get_clear_flatten_doc_index(db_path):
         for _, sub_index in enumerate(data):
             res.extend(sub_index)
     except:
-        logging.warning("can not fetch flatten index")
+        # logging.warning("can not fetch flatten index")
+        pass
     return res
 
 
