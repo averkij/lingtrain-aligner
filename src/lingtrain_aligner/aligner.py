@@ -123,6 +123,7 @@ def get_line_vectors_by_api(
     remove_after=False,
     max_len=None,
     api_key=None,
+    max_input_len=None,
 ):
     """Calculate embeddings of the strings using API.
 
@@ -144,7 +145,20 @@ def get_line_vectors_by_api(
         remove_after: whether to remove task/result files after (OpenAI path only)
         max_len: if set, truncate result to this length
         api_key: API key for the provider (passed in by caller; not read from env here)
+        max_input_len: if set, crop each text string to this many characters before sending
     """
+    if max_input_len is not None and max_input_len > 0 and len(lines) > 0:
+        cropped = 0
+        cropped_lines = []
+        for line in lines:
+            if len(line) > max_input_len:
+                cropped_lines.append(line[:max_input_len])
+                cropped += 1
+            else:
+                cropped_lines.append(line)
+        if cropped:
+            logging.info(f"Cropped {cropped}/{len(lines)} lines to max_input_len={max_input_len}")
+        lines = cropped_lines
     if api == "hf-inference":
         from huggingface_hub import InferenceClient
         client = InferenceClient(api_key=api_key, provider="hf-inference")
@@ -272,6 +286,7 @@ def update_embeddings(
     store_embeddings=False,
     provenance_model=None,
     provenance_inference=None,
+    max_input_len=None,
 ):
     """Update embeddings in the database"""
     if not force or not store_embeddings:
@@ -315,6 +330,7 @@ def update_embeddings(
             embeddings = get_line_vectors_by_api(
                 lines, ids_to_update, tasks_path, result_path, api, model_api,
                 api_key=api_key,
+                max_input_len=max_input_len,
             )
 
         if store_embeddings:
@@ -366,6 +382,7 @@ def process_batch(
     api_key=None,
     provenance_model=None,
     provenance_inference=None,
+    max_input_len=None,
 ):
     """Do the actual alignment process logic"""
     # try:
@@ -380,7 +397,7 @@ def process_batch(
             use_proxy_from, use_proxy_to, model_name, embed_batch_size,
             normalize_embeddings, show_progress_bar, model,
             lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
-            api=api, model_api=model_api, api_key=api_key,
+            api=api, model_api=model_api, api_key=api_key, max_input_len=max_input_len,
         )
     else:
         vectors1 = update_embeddings(
@@ -401,6 +418,7 @@ def process_batch(
             api_key=api_key,
             provenance_model=provenance_model,
             provenance_inference=provenance_inference,
+            max_input_len=max_input_len,
         )
 
         vectors2 = update_embeddings(
@@ -421,6 +439,7 @@ def process_batch(
             api_key=api_key,
             provenance_model=provenance_model,
             provenance_inference=provenance_inference,
+            max_input_len=max_input_len,
         )
 
         if store_embeddings:
@@ -1011,7 +1030,7 @@ def get_batch_intersected_for_segments_list(
 def _compute_embeddings_for_ids(
     db_path, direction, ids, lines, is_proxy, model_name, embed_batch_size,
     normalize_embeddings, show_progress_bar, model, lang_emb, store_embeddings, use_api,
-    api=None, model_api=None, api_key=None,
+    api=None, model_api=None, api_key=None, max_input_len=None,
 ):
     """Compute embeddings for a subset of IDs and return as a dict {id: embedding}."""
     if not ids:
@@ -1043,6 +1062,7 @@ def _compute_embeddings_for_ids(
             texts, row_ids, tasks_path, result_path,
             api or "openai", model_api or "text-embedding-3-small",
             api_key=api_key,
+            max_input_len=max_input_len,
         )
 
     if store_embeddings:
@@ -1056,7 +1076,7 @@ def _process_batch_with_cache(
     use_proxy_from, use_proxy_to, model_name, embed_batch_size,
     normalize_embeddings, show_progress_bar, model,
     lang_emb_from, lang_emb_to, store_embeddings, use_api, embedding_cache,
-    api=None, model_api=None, api_key=None,
+    api=None, model_api=None, api_key=None, max_input_len=None,
 ):
     """Process a batch using the in-memory embedding cache to skip redundant computation."""
     cache_from = embedding_cache["from"]
@@ -1072,7 +1092,7 @@ def _process_batch_with_cache(
             db_path, "from", missing_from, lines_from_batch, use_proxy_from,
             model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
             model, lang_emb_from, store_embeddings, use_api,
-            api=api, model_api=model_api, api_key=api_key,
+            api=api, model_api=model_api, api_key=api_key, max_input_len=max_input_len,
         )
         cache_from.update(new_from)
 
@@ -1081,7 +1101,7 @@ def _process_batch_with_cache(
             db_path, "to", missing_to, lines_to_batch, use_proxy_to,
             model_name, embed_batch_size, normalize_embeddings, show_progress_bar,
             model, lang_emb_to, store_embeddings, use_api,
-            api=api, model_api=model_api, api_key=api_key,
+            api=api, model_api=model_api, api_key=api_key, max_input_len=max_input_len,
         )
         cache_to.update(new_to)
 
