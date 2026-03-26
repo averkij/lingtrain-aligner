@@ -563,6 +563,7 @@ def create_book(
     template,
     styles=[],
     highlight="through",
+    embed=False,
 ):
     """Generate html"""
     # ensure path is existed
@@ -602,20 +603,25 @@ def create_book(
     <meta charset="UTF-8">
     {css}
 </head>
-<body>
-<div class="lt-header">🚀 lingtrain parallel book 🡒 {header_text} 🡒 {min_par_len} paragpaphs</div>"""
+<body>"""
         )
+
+        if not embed:
+            res_html.write(
+                f"""<div class="lt-header">🚀 lingtrain parallel book 🡒 {header_text} 🡒 {min_par_len} paragpaphs</div>"""
+            )
 
         # --------------------BOOK
         res_html.write("<div class='dt cont'>")
 
         # --------------------DIVIDER
-        res_html.write("<div class='dt-row header'>")
-        for _ in range(len(lang_ordered)):
-            res_html.write(
-                f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
-            )
-        res_html.write("</div>")
+        if not embed:
+            res_html.write("<div class='dt-row header'>")
+            for _ in range(len(lang_ordered)):
+                res_html.write(
+                    f"<div class='dt-cell divider'><img class='divider-img' src='{DIVIDER_URL}'/></div>"
+                )
+            res_html.write("</div>")
 
         # --------------------TITLE and AUTHOR
         res_html.write("<div class='dt-row header title-cell'>")
@@ -671,7 +677,9 @@ def create_book(
             next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
         # --------------------END BOOK
-        res_html.write(f"</div>{HTML_FOOTER}")
+        res_html.write("</div>")
+        if not embed:
+            res_html.write(HTML_FOOTER)
         res_html.write("</body></html>")
 
 
