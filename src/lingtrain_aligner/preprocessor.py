@@ -51,7 +51,7 @@ MARKS_FOR_ADDING = [
 ]
 
 PARAGRAPH_MARK = "%%%%%"
-LINE_ENDINGS = [".", "!", "?", ";", ":", "。", "？", "！", '"', "'"]  # ”
+LINE_ENDINGS = [".", "!", "?", ";", ":", '"', "'", "…", "»", "”", "’", "。", "？", "！", "」", "）", "؟"]
 
 headings_1 = re.compile(
     r"^часть .*$|^.* band$|^part .*$|^DÍL .*$|^capitolo .*$", re.IGNORECASE
