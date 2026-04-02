@@ -929,7 +929,7 @@ def write_next_polyheader(
                 writer.write(el)
             continue
 
-        meta = metas[lang][next_mark]
+        meta = metas[lang].get(next_mark)
         if meta:
             val = meta.pop(0)
         else:
