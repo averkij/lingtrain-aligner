@@ -11,6 +11,7 @@ import numpy as np
 INFO_KEY_NAME = "name"
 INFO_KEY_CREATED_AT = "created_at"
 INFO_KEY_LAST_EDITED_AT = "last_edited_at"
+INFO_KEY_CONTENT_VERSION = "app_content_version"
 INFO_KEY_EMBEDDING_MODEL = "embedding_model"
 INFO_KEY_EMBEDDING_MODEL_NAME = "embedding_model_name"
 INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME = "embedding_model_resolved_name"
@@ -82,6 +83,51 @@ def get_created_at(db_path):
 
 def get_last_edited_at(db_path):
     return get_info_value(db_path, INFO_KEY_LAST_EDITED_AT)
+
+
+def get_content_version_conn(db):
+    value = get_info_value_conn(db, INFO_KEY_CONTENT_VERSION)
+    if value is None:
+        return None
+    try:
+        version = int(value)
+    except (TypeError, ValueError):
+        return None
+    return version if version >= 1 else None
+
+
+def get_content_version(db_path):
+    with sqlite3.connect(db_path) as db:
+        return get_content_version_conn(db)
+
+
+def ensure_content_version_conn(db, default=1):
+    version = get_content_version_conn(db)
+    if version is not None:
+        return version
+    try:
+        version = int(default)
+    except (TypeError, ValueError):
+        version = 1
+    version = max(version, 1)
+    set_info_value_conn(db, INFO_KEY_CONTENT_VERSION, version)
+    return version
+
+
+def bump_content_version_conn(db):
+    version = ensure_content_version_conn(db) + 1
+    set_info_value_conn(db, INFO_KEY_CONTENT_VERSION, version)
+    return version
+
+
+def touch_alignment_change_conn(db, ts=None, bump_version=True):
+    version = (
+        bump_content_version_conn(db)
+        if bump_version
+        else ensure_content_version_conn(db)
+    )
+    set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, ts or _utc_now_iso())
+    return version
 
 
 def touch_last_edited_conn(db, ts=None):
@@ -275,6 +321,7 @@ def init_document_db(db_path):
         created_at = _utc_now_iso()
         set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
         set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, created_at)
+        set_info_value_conn(db, INFO_KEY_CONTENT_VERSION, 1)
         db.execute("insert into version(version) values (?)", (con.DB_VERSION,))
 
 
@@ -507,7 +554,7 @@ def compact_batches(db_path):
                     continue
             db.execute("DROP TABLE temp_batch_map")
 
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
         return {
             "mapping": mapping,
             "removed": removed,
@@ -743,7 +790,7 @@ def update_splitted_text(db_path, direction, line_id, val):
         table_name = "splitted_to"
     with sqlite3.connect(db_path) as db:
         db.execute(f"update {table_name} set text=? where id=?", (val, line_id))
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def update_processing_text(db_path, direction, line_id, val):
@@ -756,7 +803,7 @@ def update_processing_text(db_path, direction, line_id, val):
         db.execute(
             f"update {table_name} set text=? where text_ids=?", (val, f"[{line_id}]")
         )
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def insert_new_splitted_line(db_path, direction, line_id):
@@ -787,7 +834,7 @@ def insert_new_splitted_line(db_path, direction, line_id):
                     select {line_id+1}, '', proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider from {table_name} where id=?""",
                 (line_id,),
             )
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def update_processing_mapping(db_path, direction, line_id):
@@ -821,7 +868,7 @@ def update_processing_mapping(db_path, direction, line_id):
         """
         )
         db.execute("drop table temp_mapping")
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def get_doc_page(db_path, text_ids):
@@ -1057,7 +1104,7 @@ def add_meta(
                 for key, val, occurence, par_id, comment in data
             ],
         )
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
     return
 
 
@@ -1065,7 +1112,7 @@ def delete_meta(db_path, mark_id):
     """Mark meta as deleted"""
     with sqlite3.connect(db_path) as db:
         db.execute(f"update meta set deleted = 1 where id=(?)", (mark_id,))
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
     return
 
 
@@ -1094,7 +1141,7 @@ def edit_meta(db_path, mark, direction, mark_id, par_id, val):
                 f"update meta set val=(?), par_id=(?) where id=(?)",
                 (val, par_id, mark_id),
             )
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
     return
 
 
@@ -1232,7 +1279,7 @@ def migrate_document_db(db_path):
             db.execute("UPDATE version SET version = ?", ("7.2",))
             current_version = 7.2
 
-        if current_version < 7.3:
+        if current_version < 7.3 or get_content_version_conn(db) is None:
             _ensure_info_key_index(db)
             created_at = (
                 get_info_value_conn(db, INFO_KEY_CREATED_AT)
@@ -1247,6 +1294,7 @@ def migrate_document_db(db_path):
             model_name, inference_type = _infer_model_metadata(db)
             set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
             set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, last_edited_at)
+            ensure_content_version_conn(db, default=1)
             if model_name and not get_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_NAME):
                 set_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_NAME, model_name)
             if model_name and not get_info_value_conn(db, INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME):
@@ -1276,7 +1324,7 @@ def set_provenance(db_path, direction, line_ids, model_name, inference_type):
             model_name=model_name,
             inference_type=inference_type,
         )
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def check_model_mismatch(db_path, expected_model):
@@ -1297,7 +1345,7 @@ def set_name(db_path, name):
     """Update alignment name"""
     with sqlite3.connect(db_path) as db:
         set_info_value_conn(db, INFO_KEY_NAME, name)
-        touch_last_edited_conn(db)
+        touch_alignment_change_conn(db)
 
 
 def get_name(db_path):
