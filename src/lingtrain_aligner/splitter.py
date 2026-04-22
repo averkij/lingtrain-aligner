@@ -137,6 +137,67 @@ def split_ko(line):
     return [s for s in res if s.strip()]
 
 
+# --- English custom splitter ---
+# English abbreviations that razdel does not recognize — when a razdel-split
+# sentence ends with one of these, the "boundary" is spurious and must be
+# re-merged with the following fragment. Tokens are matched case-insensitively
+# on the non-whitespace chunk immediately before the trailing period (so
+# multi-part forms like "e.g" and "U.S" match their dotted prefix).
+_EN_NONBOUNDARY_ABBREVS = frozenset({
+    # Reference / citation
+    "p", "pp", "fig", "figs", "no", "nos", "vol", "vols",
+    "ch", "chap", "chaps", "sec", "secs", "par", "pars",
+    "col", "cols", "ed", "eds", "ff", "cf", "ibid", "al", "et",
+    # Titles and honorifics that razdel misses
+    "prof", "rev", "hon", "sr", "jr",
+    "gen", "capt", "lt", "sgt", "cpl", "pvt",
+    "pres", "gov", "sen", "rep", "atty", "supt",
+    # Common abbreviations
+    "inc", "ltd", "corp", "dept", "univ", "assn", "co",
+    "bros", "mt", "ave", "blvd", "rd", "ln", "apt", "ste", "bldg",
+    # Months (when abbreviated mid-sentence)
+    "jan", "feb", "mar", "apr", "jun", "jul",
+    "aug", "sep", "sept", "oct", "nov", "dec",
+    # Days
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+    # Multi-part dotted abbreviations (matched as their dotted prefix)
+    "e.g", "i.e", "u.s", "u.k", "u.s.a",
+})
+
+# Captures the last non-whitespace token immediately preceding a trailing period
+# (e.g. "See Fig." → "Fig"; "e.g." → "e.g").
+_en_trailing_abbrev = re.compile(r"(\S+)\.\s*$")
+
+
+def _merge_en_abbrev_boundaries(sentences):
+    """Merge consecutive razdel fragments when the earlier one ends with a
+    known English abbreviation (so razdel's false split after 'Fig.' or 'p.'
+    is undone)."""
+    if not sentences:
+        return sentences
+    merged = []
+    buffer = None
+    for s in sentences:
+        buffer = s if buffer is None else buffer + " " + s
+        tail = _en_trailing_abbrev.search(buffer)
+        if tail and tail.group(1).lower() in _EN_NONBOUNDARY_ABBREVS:
+            continue
+        merged.append(buffer)
+        buffer = None
+    if buffer is not None:
+        merged.append(buffer)
+    return merged
+
+
+def split_en(line):
+    """Split English text using razdel, then merge false boundaries caused by
+    razdel not recognizing common English abbreviations ('Fig.', 'p.', 'Vol.',
+    etc.)."""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
+    raw = [x.text for x in razdel.sentenize(line)]
+    return _merge_en_abbrev_boundaries(raw)
+
+
 # --- German custom splitter ---
 # German abbreviations that end with a period but are NOT sentence boundaries.
 _DE_ABBREVIATIONS = {
@@ -328,6 +389,7 @@ splitter_fn = {
     HY_CODE: split_hy,
     KO_CODE: split_ko,
     DE_CODE: split_de,
+    EN_CODE: split_en,
 }
 
 # Route Cyrillic-script languages to razdel

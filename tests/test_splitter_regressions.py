@@ -80,3 +80,72 @@ def test_split_by_sentences_handles_adjacent_dialogue_dash_boundaries():
         "— «Ну, мой друг Акулина, непременно буду в гости к твоему батюшке, к Василью-кузнецу».",
         "— «Что ты? — возразила с живостию Лиза,— ради Христа, не приходи.",
     ]
+
+
+def test_split_en_keeps_page_references_in_one_sentence():
+    """English 'p.' / 'pp.' as page references must not terminate a sentence."""
+
+    sentences = splitter.split_by_sentences(
+        ["You can see this in p. 1 and in p.2 for details."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["You can see this in p. 1 and in p.2 for details."]
+
+
+def test_split_en_keeps_figure_caption_with_number():
+    """'Fig. 1. <Caption>' must be kept as a single sentence — the period after
+    the figure number is not a sentence boundary."""
+
+    sentences = splitter.split_by_sentences(
+        [
+            "Fig. 1. Cult Image from the Bakhty Village (Florinsky, 1896, Table VIII). "
+            "The next sentence starts here."
+        ],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == [
+        "Fig. 1. Cult Image from the Bakhty Village (Florinsky, 1896, Table VIII).",
+        "The next sentence starts here.",
+    ]
+
+
+def test_split_en_handles_reference_abbreviations():
+    """Reference abbreviations Vol./No./pp. inside a single sentence must not
+    cause false boundaries."""
+
+    sentences = splitter.split_by_sentences(
+        ["Vol. 3, No. 2 of the journal is on p. 12."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["Vol. 3, No. 2 of the journal is on p. 12."]
+
+
+def test_split_en_still_splits_real_sentence_boundaries():
+    """The English post-merge must not swallow real sentence boundaries after
+    a figure caption — 'Fig. 1. Caption.' must stay intact, but a following
+    sentence must still separate."""
+
+    sentences = splitter.split_by_sentences(
+        ["See Fig. 1. Cult Image from the village. Another sentence follows."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == [
+        "See Fig. 1. Cult Image from the village.",
+        "Another sentence follows.",
+    ]
+
+
+def test_split_en_preserves_initials():
+    """Razdel already handles 'J. K. Rowling'-style initials — make sure
+    the English wrapper does not regress this."""
+
+    sentences = splitter.split_by_sentences(
+        ["J. K. Rowling wrote a book. It was popular."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["J. K. Rowling wrote a book.", "It was popular."]
