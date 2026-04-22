@@ -149,3 +149,72 @@ def test_split_en_preserves_initials():
     )
 
     assert sentences == ["J. K. Rowling wrote a book.", "It was popular."]
+
+
+def test_split_ru_keeps_figure_caption_with_number():
+    """'Рис. N. <Caption>' must stay intact — razdel splits after 'Рис. 1.'
+    because the number's trailing period looks like a sentence boundary."""
+
+    sentences = splitter.split_by_sentences(
+        ["Рис. 1. Название рисунка. Следующее предложение."],
+        splitter.RU_CODE,
+    )
+
+    assert sentences == [
+        "Рис. 1. Название рисунка.",
+        "Следующее предложение.",
+    ]
+
+
+def test_split_ru_keeps_bakhty_caption_with_internal_табл():
+    """Real caption from the user's corpus — 'Рис. 1. Культовое изображение …
+    табл. VIII).' must survive as a single sentence despite the nested
+    'табл.' reference razdel splits on."""
+
+    sentences = splitter.split_by_sentences(
+        [
+            "Рис. 1. Культовое изображение из села Бахты "
+            "(Флоринский, 1896, табл. VIII)."
+        ],
+        splitter.RU_CODE,
+    )
+
+    assert sentences == [
+        "Рис. 1. Культовое изображение из села Бахты "
+        "(Флоринский, 1896, табл. VIII)."
+    ]
+
+
+def test_split_ru_keeps_table_caption_with_number():
+    """'Табл. N. <Caption>' follows the same pattern as 'Рис. N.'."""
+
+    sentences = splitter.split_by_sentences(
+        ["Табл. 3. Данные эксперимента. Здесь продолжение."],
+        splitter.RU_CODE,
+    )
+
+    assert sentences == [
+        "Табл. 3. Данные эксперимента.",
+        "Здесь продолжение.",
+    ]
+
+
+def test_split_ru_preserves_existing_page_references():
+    """Razdel-native handling of 'с.' and 'т. е.' must not regress after
+    the caption-aware post-merge is added."""
+
+    sentences = splitter.split_by_sentences(
+        ["Смотрите с. 1 и с. 2 для подробностей."],
+        splitter.RU_CODE,
+    )
+    assert sentences == ["Смотрите с. 1 и с. 2 для подробностей."]
+
+
+def test_split_ru_still_splits_plain_sentences():
+    """Ordinary prose must still split normally."""
+
+    sentences = splitter.split_by_sentences(
+        ["Дом стоял на холме. Ветер дул с моря."],
+        splitter.RU_CODE,
+    )
+    assert sentences == ["Дом стоял на холме.", "Ветер дул с моря."]

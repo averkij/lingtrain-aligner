@@ -137,12 +137,53 @@ def split_ko(line):
     return [s for s in res if s.strip()]
 
 
+# --- Abbreviation-aware post-merge (shared by English and Russian wrappers) ---
+# razdel is primarily tuned for Russian prose; both English and Russian produce
+# spurious splits around certain reference abbreviations. Instead of replacing
+# razdel, we run it first and then undo the false boundaries by merging back
+# fragments whose trailing token is a known non-boundary abbreviation.
+
+# Plain tail: last non-whitespace token ending in a period ("... Fig." / "...Табл.").
+_tail_abbrev_plain = re.compile(r"(\S+)\.\s*$")
+# Captioned tail: "<abbrev>. <number>." where <number> may contain internal
+# dots. Catches "Рис. 1.", "Fig. 1.5.", "П. 4.3.2." — caption prefixes razdel
+# treats as sentence boundaries when the number's period is followed by a
+# capital letter.
+_tail_abbrev_number = re.compile(r"(\S+)\.\s+\d[\d.]*\.\s*$")
+
+
+def _trailing_token_is_nonboundary(text, abbrevs):
+    """True if `text` ends with `<abbrev>.` or `<abbrev>. <digits>.` where
+    the lowercased abbrev is in `abbrevs`."""
+    for pat in (_tail_abbrev_number, _tail_abbrev_plain):
+        m = pat.search(text)
+        if m and m.group(1).lower() in abbrevs:
+            return True
+    return False
+
+
+def _merge_abbrev_boundaries(sentences, abbrevs):
+    """Merge consecutive razdel fragments when the earlier fragment ends with
+    a known non-boundary abbreviation, undoing razdel's false split."""
+    if not sentences:
+        return sentences
+    merged = []
+    buffer = None
+    for s in sentences:
+        buffer = s if buffer is None else buffer + " " + s
+        if _trailing_token_is_nonboundary(buffer, abbrevs):
+            continue
+        merged.append(buffer)
+        buffer = None
+    if buffer is not None:
+        merged.append(buffer)
+    return merged
+
+
 # --- English custom splitter ---
-# English abbreviations that razdel does not recognize — when a razdel-split
-# sentence ends with one of these, the "boundary" is spurious and must be
-# re-merged with the following fragment. Tokens are matched case-insensitively
-# on the non-whitespace chunk immediately before the trailing period (so
-# multi-part forms like "e.g" and "U.S" match their dotted prefix).
+# English abbreviations razdel does not recognize. Matched case-insensitively
+# on the non-whitespace chunk immediately before the trailing period, so
+# multi-part forms like "e.g" and "U.S" match their dotted prefix.
 _EN_NONBOUNDARY_ABBREVS = frozenset({
     # Reference / citation
     "p", "pp", "fig", "figs", "no", "nos", "vol", "vols",
@@ -164,30 +205,6 @@ _EN_NONBOUNDARY_ABBREVS = frozenset({
     "e.g", "i.e", "u.s", "u.k", "u.s.a",
 })
 
-# Captures the last non-whitespace token immediately preceding a trailing period
-# (e.g. "See Fig." → "Fig"; "e.g." → "e.g").
-_en_trailing_abbrev = re.compile(r"(\S+)\.\s*$")
-
-
-def _merge_en_abbrev_boundaries(sentences):
-    """Merge consecutive razdel fragments when the earlier one ends with a
-    known English abbreviation (so razdel's false split after 'Fig.' or 'p.'
-    is undone)."""
-    if not sentences:
-        return sentences
-    merged = []
-    buffer = None
-    for s in sentences:
-        buffer = s if buffer is None else buffer + " " + s
-        tail = _en_trailing_abbrev.search(buffer)
-        if tail and tail.group(1).lower() in _EN_NONBOUNDARY_ABBREVS:
-            continue
-        merged.append(buffer)
-        buffer = None
-    if buffer is not None:
-        merged.append(buffer)
-    return merged
-
 
 def split_en(line):
     """Split English text using razdel, then merge false boundaries caused by
@@ -195,7 +212,48 @@ def split_en(line):
     etc.)."""
     line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
     raw = [x.text for x in razdel.sentenize(line)]
-    return _merge_en_abbrev_boundaries(raw)
+    return _merge_abbrev_boundaries(raw, _EN_NONBOUNDARY_ABBREVS)
+
+
+# --- Russian (and related Cyrillic) custom splitter ---
+# Razdel already handles many Russian abbreviations (с., т., см., напр.,
+# etc.), but it still splits after caption prefixes like "Рис. 1.", "Табл. 3.",
+# "Ил. 5.", "Прим. 2." where the number's trailing period is followed by the
+# capital letter of the caption text. This set covers the caption/reference
+# shapes razdel misses; it is applied to all Cyrillic-script languages that
+# currently route through razdel.
+_RU_NONBOUNDARY_ABBREVS = frozenset({
+    # Caption / figure / table / illustration
+    "рис",   # рисунок
+    "табл",  # таблица
+    "ил",    # иллюстрация
+    "прим",  # примечание
+    # Structural references
+    "гл",    # глава
+    "разд",  # раздел
+    "кн",    # книга
+    "вып",   # выпуск
+    "ст",    # статья / стих
+    "п",     # пункт / параграф
+    "пп",    # подпункт
+    "ч",     # часть
+    "т",     # том
+    # Page / see / compare / e.g.
+    "стр",   # страница
+    "с",     # страница (short)
+    "см",    # см.
+    "ср",    # ср.
+    "напр",  # например
+})
+
+
+def split_ru(line):
+    """Split Russian (and related Cyrillic-script) text using razdel, then
+    merge false boundaries razdel produces around caption-style references
+    like 'Рис. 1.' or 'Табл. 3.'."""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
+    raw = [x.text for x in razdel.sentenize(line)]
+    return _merge_abbrev_boundaries(raw, _RU_NONBOUNDARY_ABBREVS)
 
 
 # --- German custom splitter ---
@@ -392,9 +450,9 @@ splitter_fn = {
     EN_CODE: split_en,
 }
 
-# Route Cyrillic-script languages to razdel
+# Route Cyrillic-script languages to the Russian splitter (razdel + caption merge)
 for _cc in CYRILLIC_LANG_CODES:
-    splitter_fn[_cc] = split_by_razdel
+    splitter_fn[_cc] = split_ru
 
 preprocessing_rules = {
     RU_CODE: [(pattern_ru_orig, ""), *DEFAULT_PREPROCESSING],
