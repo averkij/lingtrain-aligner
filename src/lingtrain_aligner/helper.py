@@ -43,6 +43,26 @@ def _ensure_info_key_index(db):
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_info_key_unique ON info(key)")
 
 
+def _ensure_processing_batch_indexes(db):
+    """Create indexes used by per-batch processing and compaction paths."""
+    tables = {
+        row[0]
+        for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    for table_name in ("processing_from", "processing_to"):
+        if table_name in tables:
+            db.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table_name}_batch_id_id "
+                f"ON {table_name}(batch_id, id)"
+            )
+    if "history" in tables:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_batch_id ON history(batch_id)"
+        )
+
+
 def get_info_value_conn(db, key):
     row = db.execute(
         "SELECT val FROM info WHERE key = ? LIMIT 1",
@@ -318,6 +338,7 @@ def init_document_db(db_path):
         db.execute("create table info(id integer primary key, key text, val text)")
         db.execute("create table version(id integer primary key, version text)")
         _ensure_info_key_index(db)
+        _ensure_processing_batch_indexes(db)
         created_at = _utc_now_iso()
         set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
         set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, created_at)
@@ -1302,6 +1323,8 @@ def migrate_document_db(db_path):
             if inference_type and not get_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE):
                 set_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE, inference_type)
             db.execute("UPDATE version SET version = ?", (con.DB_VERSION,))
+
+        _ensure_processing_batch_indexes(db)
 
 
 def set_provenance(db_path, direction, line_ids, model_name, inference_type):
