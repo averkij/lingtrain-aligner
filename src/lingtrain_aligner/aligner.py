@@ -1,17 +1,19 @@
 """Texts aligner part of the engine"""
 
+import gc
 import json
 import logging
 import os
 import random
 import re
 import sqlite3
+import uuid
 from collections import defaultdict
 
 import numpy as np
 from lingtrain_aligner import constants as con
 from lingtrain_aligner import (helper, model_dispatcher, preprocessor,
-                               punct_sim, vis_helper)
+                               punct_sim, splitter, vis_helper)
 from scipy import spatial
 from sentence_transformers import SentenceTransformer
 import subprocess
@@ -1436,6 +1438,364 @@ def fill_db(
             [("from", file_from, id_from), ("to", file_to, id_to)],
         )
     helper.set_name(db_path, name)
+
+
+class TrivialAlignmentError(Exception):
+    """Raised when two texts cannot be aligned trivially because their
+    structure does not match (different number of paragraphs/marks, mismatched
+    markup, or — in strict mode — a differing per-paragraph sentence split)."""
+
+
+def _detect_meta_mark(line):
+    """Return the meta mark a raw marked line ends with (e.g. 'h2', 'title',
+    'divider'), or None for a regular paragraph line."""
+    for mark in preprocessor.MARK_META:
+        if line.endswith(f"{preprocessor.PARAGRAPH_MARK}{mark}."):
+            return mark
+    return None
+
+
+def _read_nonempty_lines(path):
+    """Read a marked text file, returning stripped non-empty lines."""
+    with open(path, mode="r", encoding="utf-8") as f:
+        return [line.strip() for line in f.readlines() if line.strip()]
+
+
+def _resolve_split_langcode(langcode):
+    """Validate a language code for the splitter, falling back to the generic
+    code (with a warning) when unsupported — mirrors split_by_sentences_and_save."""
+    if splitter.is_lang_code_valid(langcode):
+        return langcode
+    logging.warning(
+        "Unsupported language code '%s', falling back to '%s' (General) for splitting",
+        langcode,
+        splitter.XX_CODE,
+    )
+    return splitter.XX_CODE
+
+
+def trivial_alignment(
+    from_path,
+    to_path,
+    lang_from,
+    lang_to,
+    output_path,
+    name="",
+    clean_text=False,
+    on_mismatch="merge",
+    batch_size=200,
+    file_from=None,
+    file_to=None,
+    id_from=None,
+    id_to=None,
+):
+    """Build a ready-to-use alignment database from two structurally parallel
+    marked texts WITHOUT embeddings or the similarity-based alignment algorithm.
+
+    This is meant for the case where the translation is produced under full
+    control (for example by ``smart_translator``) so that both texts share the
+    exact same paragraph structure and Lingtrain markup. In that case the
+    alignment is trivial: sentences line up 1:1 inside every paragraph, so there
+    is no need to compute embeddings or run the resolver.
+
+    The texts are anchored on raw lines (one paragraph or one ``%%%%%`` mark per
+    line). This anchor is robust: language-specific sentence splitters can
+    legitimately disagree on a few boundaries (quotes, abbreviations, dashes),
+    which would desynchronise a naive global 1:1 mapping, but the paragraph
+    structure stays aligned by construction.
+
+    Validation (always enforced, raises ``TrivialAlignmentError`` on failure):
+      * both files must have the same number of non-empty lines (paragraphs);
+      * the ``%%%%%`` mark on every line must match between the two texts.
+
+    Per-paragraph sentence split handling (``on_mismatch``):
+      * ``"merge"`` (default): when a paragraph splits into a different number of
+        sentences on each side, emit it as a single N:M merged pair and continue.
+        The returned report lists every merged paragraph so nothing is hidden.
+      * ``"error"``: raise ``TrivialAlignmentError`` listing the offending
+        paragraphs (strict 1:1, matching "check that sentence counts are equal").
+
+    Args:
+        from_path: path to the source marked text file.
+        to_path: path to the target (translation) marked text file.
+        lang_from: language code of the source text (e.g. "en").
+        lang_to: language code of the target text (e.g. "ru").
+        output_path: path of the alignment database to create (e.g. "book.lt").
+            An existing file at this path is overwritten.
+        name: human-readable alignment name stored in the database.
+        clean_text: apply language-specific cleaning during splitting (matches
+            the ``clean_text`` flag of ``split_by_sentences_and_save``).
+        on_mismatch: "merge" (default) or "error" — see above.
+        batch_size: number of source lines per batch in the output (default 200).
+            Keep this equal to the consuming web app's ``ALIGNER_BATCH_SIZE`` so
+            the import recognises the file as fully aligned (DONE) rather than
+            partially processed.
+        file_from, file_to: original file names stored in the ``files`` table
+            (default: basenames of the input paths).
+        id_from, id_to: GUIDs stored in the ``files`` table (default: random).
+
+    Returns:
+        A report dict with line/paragraph/sentence counts, the meta marks found,
+        the number of 1:1 units, and details of any merged paragraphs.
+    """
+    if on_mismatch not in ("merge", "error"):
+        raise ValueError("on_mismatch must be 'merge' or 'error'")
+
+    lang_from_split = _resolve_split_langcode(lang_from)
+    lang_to_split = _resolve_split_langcode(lang_to)
+
+    raw_from = _read_nonempty_lines(from_path)
+    raw_to = _read_nonempty_lines(to_path)
+
+    if len(raw_from) != len(raw_to):
+        raise TrivialAlignmentError(
+            f"Paragraph/line count mismatch: '{from_path}' has {len(raw_from)} "
+            f"non-empty lines, '{to_path}' has {len(raw_to)}. Trivial alignment "
+            f"requires identical paragraph structure (one paragraph or one mark "
+            f"per line, in the same order)."
+        )
+
+    # Per-side splitted lines: each entry is (text, marks_tuple) where
+    # marks_tuple = (paragraph, h1, h2, h3, h4, h5, divider) cumulative counters.
+    splitted_from, splitted_to = [], []
+    meta_from, meta_par_from = defaultdict(list), defaultdict(list)
+    meta_to, meta_par_to = defaultdict(list), defaultdict(list)
+    counters_from, counters_to = defaultdict(int), defaultdict(int)
+
+    # Aligned units driving processing tables / doc_index. Each unit is
+    # (from_ids, from_text, to_ids, to_text) and becomes one paired row.
+    units = []
+    merged = []  # diagnostics for paragraphs that were not a clean 1:1 split
+    fid = tid = 0  # running splitted ids (1-based)
+
+    def marks_tuple(c):
+        return (
+            c[preprocessor.PARAGRAPH],
+            c[preprocessor.H1],
+            c[preprocessor.H2],
+            c[preprocessor.H3],
+            c[preprocessor.H4],
+            c[preprocessor.H5],
+            c[preprocessor.DIVIDER],
+        )
+
+    for i, (line_from, line_to) in enumerate(zip(raw_from, raw_to)):
+        mark_from = _detect_meta_mark(line_from)
+        mark_to = _detect_meta_mark(line_to)
+
+        if mark_from != mark_to:
+            raise TrivialAlignmentError(
+                f"Markup mismatch at line {i + 1}: 'from' mark={mark_from!r}, "
+                f"'to' mark={mark_to!r}.\n"
+                f"  from: {line_from[:120]}\n  to:   {line_to[:120]}"
+            )
+
+        if mark_from is not None:
+            # Pure meta/heading line on both sides. Bump structural counters
+            # first, then record meta with the current paragraph id, then bump
+            # the paragraph counter — mirroring aligner.handle_marks.
+            for mark in preprocessor.MARK_COUNTERS:
+                ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
+                if line_from.endswith(ending):
+                    counters_from[mark] += 1
+                if line_to.endswith(ending):
+                    counters_to[mark] += 1
+            meta_from[mark_from].append(get_mark_value(line_from, mark_from))
+            meta_par_from[mark_from].append(counters_from[preprocessor.PARAGRAPH])
+            meta_to[mark_to].append(get_mark_value(line_to, mark_to))
+            meta_par_to[mark_to].append(counters_to[preprocessor.PARAGRAPH])
+            counters_from[preprocessor.PARAGRAPH] += 1
+            counters_to[preprocessor.PARAGRAPH] += 1
+            continue
+
+        # Regular paragraph on both sides — split into sentences independently.
+        sents_from = [
+            s.strip()
+            for s in splitter.split_by_sentences([line_from], lang_from_split, clean_text)
+            if s.strip()
+        ]
+        sents_to = [
+            s.strip()
+            for s in splitter.split_by_sentences([line_to], lang_to_split, clean_text)
+            if s.strip()
+        ]
+
+        mt_from = marks_tuple(counters_from)
+        mt_to = marks_tuple(counters_to)
+
+        para_from_ids = []
+        for s in sents_from:
+            fid += 1
+            splitted_from.append((s, mt_from))
+            para_from_ids.append(fid)
+        para_to_ids = []
+        for s in sents_to:
+            tid += 1
+            splitted_to.append((s, mt_to))
+            para_to_ids.append(tid)
+
+        if sents_from and len(sents_from) == len(sents_to):
+            # Clean 1:1 split — one paired row per sentence.
+            for k in range(len(sents_from)):
+                units.append(
+                    ([para_from_ids[k]], sents_from[k], [para_to_ids[k]], sents_to[k])
+                )
+        elif sents_from or sents_to:
+            # Differing (or one-sided) split — keep the paragraph as one merged
+            # unit so the result stays complete and paragraph-aligned.
+            merged.append(
+                {
+                    "line": i + 1,
+                    "paragraph": counters_from[preprocessor.PARAGRAPH],
+                    "from_count": len(sents_from),
+                    "to_count": len(sents_to),
+                    "from_text": " ".join(sents_from)[:160],
+                    "to_text": " ".join(sents_to)[:160],
+                }
+            )
+            units.append(
+                (
+                    para_from_ids,
+                    " ".join(sents_from),
+                    para_to_ids,
+                    " ".join(sents_to),
+                )
+            )
+        # else: both sides empty after splitting — nothing to emit.
+
+        counters_from[preprocessor.PARAGRAPH] += 1
+        counters_to[preprocessor.PARAGRAPH] += 1
+
+    if on_mismatch == "error" and merged:
+        preview = "\n".join(
+            f"  line {m['line']}: from={m['from_count']} sentence(s), "
+            f"to={m['to_count']} sentence(s)"
+            for m in merged[:20]
+        )
+        more = "\n  ..." if len(merged) > 20 else ""
+        raise TrivialAlignmentError(
+            f"Sentence-count mismatch in {len(merged)} paragraph(s); cannot align "
+            f"strictly 1:1. Use on_mismatch='merge' to merge them, or fix the "
+            f"texts so each paragraph splits into the same number of sentences.\n"
+            f"{preview}{more}"
+        )
+
+    # Defensive: marks were matched per line, so meta counts must already agree.
+    for key in set(meta_from) | set(meta_to):
+        if len(meta_from.get(key, [])) != len(meta_to.get(key, [])):
+            raise TrivialAlignmentError(
+                f"Meta mark count mismatch for '{key}': "
+                f"from={len(meta_from.get(key, []))}, to={len(meta_to.get(key, []))}"
+            )
+
+    # ---- Build the alignment database ----
+    # A prior run may leave sqlite connections held by GC cycles (Python's
+    # `with sqlite3.connect()` manages the transaction, not the connection, so
+    # the handle is not closed deterministically). On Windows those linger as
+    # file locks; collect them so init_document_db can overwrite the file.
+    if os.path.isfile(output_path):
+        gc.collect()
+    helper.init_document_db(output_path)
+
+    file_from = file_from or os.path.basename(from_path)
+    file_to = file_to or os.path.basename(to_path)
+    id_from = id_from or uuid.uuid4().hex
+    id_to = id_to or uuid.uuid4().hex
+
+    # NB: sqlite3's `with` block only manages the transaction, it does NOT
+    # close the connection. Close explicitly so a re-run can overwrite the file
+    # on Windows (otherwise init_document_db's os.remove hits a lingering lock).
+    db = sqlite3.connect(output_path)
+    try:
+        db.executemany(
+            "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6])
+                for idx, (text, m) in enumerate(splitted_from)
+            ],
+        )
+        db.executemany(
+            "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6])
+                for idx, (text, m) in enumerate(splitted_to)
+            ],
+        )
+        db.executemany(
+            "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+            flatten_meta(meta_from, meta_par_from, "from"),
+        )
+        db.executemany(
+            "insert into meta(key, val, occurence, par_id) values(?,?,?,?)",
+            flatten_meta(meta_to, meta_par_to, "to"),
+        )
+        db.executemany(
+            "insert into languages(key, val) values(?,?)",
+            [("from", lang_from), ("to", lang_to)],
+        )
+        db.executemany(
+            "insert into files(direction, name, guid) values(?,?,?)",
+            [("from", file_from, id_from), ("to", file_to, id_to)],
+        )
+        db.commit()
+    finally:
+        db.close()
+    helper.set_name(output_path, name)
+
+    # Processing tables + document index. Units are laid out into batches of
+    # `batch_size` source lines, mirroring the real aligner. This matters for
+    # the web app: on import it infers total_batches = ceil(len_from/batch_size)
+    # and curr_batches = number of batches present, marking the alignment DONE
+    # only when they match. A single giant batch would otherwise import as
+    # partially aligned. Keep batch_size aligned with the app's ALIGNER_BATCH_SIZE.
+    batched = defaultdict(list)
+    for u in units:
+        anchor = u[0][0] if u[0] else (u[2][0] if u[2] else 1)
+        batched[(anchor - 1) // batch_size].append(u)
+
+    data = []
+    for batch_id in sorted(batched):
+        batch_units = batched[batch_id]
+        texts_from = [
+            (json.dumps(u[0]), (u[0][0] if u[0] else None), u[1]) for u in batch_units
+        ]
+        texts_to = [
+            (json.dumps(u[2]), (u[2][0] if u[2] else None), u[3]) for u in batch_units
+        ]
+        data.append((batch_id, texts_from, texts_to, 0, 0))
+
+    save_db(output_path, data)
+    batch_ids = sorted(batched)
+    update_history(
+        output_path,
+        batch_ids,
+        con.OPERATION_TRIVIAL,
+        {"on_mismatch": on_mismatch, "merged_paragraphs": len(merged)},
+    )
+    helper.migrate_document_db(output_path)
+
+    report = {
+        "output": output_path,
+        "lines": len(raw_from),
+        "paragraphs": counters_from[preprocessor.PARAGRAPH],
+        "from_sentences": len(splitted_from),
+        "to_sentences": len(splitted_to),
+        "units": len(units),
+        "batches": len(batch_ids),
+        "one_to_one": len(units) - len(merged),
+        "merged_paragraphs": len(merged),
+        "merged_details": merged,
+        "meta": {key: len(vals) for key, vals in meta_from.items()},
+        "status": "perfect" if not merged else "merged",
+    }
+    logging.info(
+        "trivial_alignment: %s lines, %s units (%s merged) -> %s",
+        report["lines"],
+        report["units"],
+        report["merged_paragraphs"],
+        output_path,
+    )
+    return report
 
 
 def load_proxy(db_path, filepath, direction):
