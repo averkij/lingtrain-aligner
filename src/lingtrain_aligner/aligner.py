@@ -1455,6 +1455,15 @@ def _detect_meta_mark(line):
     return None
 
 
+# Metadata marks describe the whole document rather than a position in its body.
+# Unlike structural marks (h1-h5/divider/qtext/qname/image) they may legitimately
+# appear on one side without the other — e.g. a machine translation credits a
+# ``translator`` the original text never had. ``trivial_alignment`` therefore
+# matches them per side (recording each into ``meta`` independently) rather than
+# positionally, and they never consume a 1:1 body-alignment slot.
+META_SIDE_MARKS = (preprocessor.TITLE, preprocessor.AUTHOR, preprocessor.TRANSLATOR)
+
+
 def _read_nonempty_lines(path):
     """Read a marked text file, returning stripped non-empty lines."""
     with open(path, mode="r", encoding="utf-8") as f:
@@ -1505,8 +1514,14 @@ def trivial_alignment(
     structure stays aligned by construction.
 
     Validation (always enforced, raises ``TrivialAlignmentError`` on failure):
-      * both files must have the same number of non-empty lines (paragraphs);
-      * the ``%%%%%`` mark on every line must match between the two texts.
+      * both files must have the same number of *body* lines — paragraphs plus
+        structural marks (h1-h5/divider/qtext/qname/image);
+      * the ``%%%%%`` mark on every body line must match between the two texts.
+
+    ``title``/``author``/``translator`` are side-independent metadata: they are
+    recorded into the ``meta`` table per side and need NOT match (a machine
+    translation may carry a ``translator`` the source lacks). They are expected
+    at the top of the document and never participate in body anchoring.
 
     Per-paragraph sentence split handling (``on_mismatch``):
       * ``"merge"`` (default): when a paragraph splits into a different number of
@@ -1547,12 +1562,19 @@ def trivial_alignment(
     raw_from = _read_nonempty_lines(from_path)
     raw_to = _read_nonempty_lines(to_path)
 
-    if len(raw_from) != len(raw_to):
+    # ``title``/``author``/``translator`` are side-independent metadata
+    # (``META_SIDE_MARKS``): they are drained per side and recorded into ``meta``
+    # without consuming a body-alignment slot, so a translation may carry a
+    # ``translator`` mark the source lacks. Only the *body* — paragraphs and
+    # structural marks (h1-h5/divider/qtext/qname/image) — must line up 1:1.
+    n_body_from = sum(1 for ln in raw_from if _detect_meta_mark(ln) not in META_SIDE_MARKS)
+    n_body_to = sum(1 for ln in raw_to if _detect_meta_mark(ln) not in META_SIDE_MARKS)
+    if n_body_from != n_body_to:
         raise TrivialAlignmentError(
-            f"Paragraph/line count mismatch: '{from_path}' has {len(raw_from)} "
-            f"non-empty lines, '{to_path}' has {len(raw_to)}. Trivial alignment "
-            f"requires identical paragraph structure (one paragraph or one mark "
-            f"per line, in the same order)."
+            f"Paragraph/line count mismatch: '{from_path}' has {n_body_from} "
+            f"body line(s), '{to_path}' has {n_body_to} (excluding title/author/"
+            f"translator metadata). Trivial alignment requires identical paragraph "
+            f"structure (one paragraph or one mark per line, in the same order)."
         )
 
     # Per-side splitted lines: each entry is (text, marks_tuple) where
@@ -1579,21 +1601,59 @@ def trivial_alignment(
             c[preprocessor.DIVIDER],
         )
 
-    for i, (line_from, line_to) in enumerate(zip(raw_from, raw_to)):
+    def consume_meta_mark(idx, raw, meta, meta_par, counters):
+        """If ``raw[idx]`` is a side-independent metadata mark, record it with the
+        current paragraph id and return ``idx + 1``; otherwise return ``None``.
+
+        The paragraph counter is bumped exactly as for any other line, so a pair
+        of structurally identical texts yields byte-identical paragraph ids — the
+        side-independent handling only changes behaviour when the two sides carry
+        a *different* set of metadata marks."""
+        if idx >= len(raw):
+            return None
+        mark = _detect_meta_mark(raw[idx])
+        if mark not in META_SIDE_MARKS:
+            return None
+        meta[mark].append(get_mark_value(raw[idx], mark))
+        meta_par[mark].append(counters[preprocessor.PARAGRAPH])
+        counters[preprocessor.PARAGRAPH] += 1
+        return idx + 1
+
+    # Two cursors: drain leading (or otherwise unmatched) metadata marks one side
+    # at a time, then pair the next body line on each side. Metadata sits at the
+    # top in practice, so it is consumed before any body line and the body stays
+    # aligned; a metadata mark elsewhere is still absorbed without desync.
+    i = j = 0
+    body_index = 0
+    while i < len(raw_from) or j < len(raw_to):
+        adv = consume_meta_mark(i, raw_from, meta_from, meta_par_from, counters_from)
+        if adv is not None:
+            i = adv
+            continue
+        adv = consume_meta_mark(j, raw_to, meta_to, meta_par_to, counters_to)
+        if adv is not None:
+            j = adv
+            continue
+
+        # Both cursors now sit on a body line (the body-count check guarantees
+        # the two sides run out of body lines together).
+        line_from, line_to = raw_from[i], raw_to[j]
+        body_index += 1
+
         mark_from = _detect_meta_mark(line_from)
         mark_to = _detect_meta_mark(line_to)
 
         if mark_from != mark_to:
             raise TrivialAlignmentError(
-                f"Markup mismatch at line {i + 1}: 'from' mark={mark_from!r}, "
-                f"'to' mark={mark_to!r}.\n"
+                f"Markup mismatch at body line {body_index} (from line {i + 1}, "
+                f"to line {j + 1}): 'from' mark={mark_from!r}, 'to' mark={mark_to!r}.\n"
                 f"  from: {line_from[:120]}\n  to:   {line_to[:120]}"
             )
 
         if mark_from is not None:
-            # Pure meta/heading line on both sides. Bump structural counters
-            # first, then record meta with the current paragraph id, then bump
-            # the paragraph counter — mirroring aligner.handle_marks.
+            # Structural mark on both sides. Bump structural counters first, then
+            # record meta with the current paragraph id, then bump the paragraph
+            # counter — mirroring aligner.handle_marks.
             for mark in preprocessor.MARK_COUNTERS:
                 ending = f"{preprocessor.PARAGRAPH_MARK}{mark}."
                 if line_from.endswith(ending):
@@ -1606,6 +1666,8 @@ def trivial_alignment(
             meta_par_to[mark_to].append(counters_to[preprocessor.PARAGRAPH])
             counters_from[preprocessor.PARAGRAPH] += 1
             counters_to[preprocessor.PARAGRAPH] += 1
+            i += 1
+            j += 1
             continue
 
         # Regular paragraph on both sides — split into sentences independently.
@@ -1665,6 +1727,8 @@ def trivial_alignment(
 
         counters_from[preprocessor.PARAGRAPH] += 1
         counters_to[preprocessor.PARAGRAPH] += 1
+        i += 1
+        j += 1
 
     if on_mismatch == "error" and merged:
         preview = "\n".join(
@@ -1680,8 +1744,12 @@ def trivial_alignment(
             f"{preview}{more}"
         )
 
-    # Defensive: marks were matched per line, so meta counts must already agree.
+    # Defensive: structural (body) marks were matched per line, so their meta
+    # counts must already agree. Side-independent metadata marks (title/author/
+    # translator) may legitimately differ between the two sides — skip them here.
     for key in set(meta_from) | set(meta_to):
+        if key in META_SIDE_MARKS:
+            continue
         if len(meta_from.get(key, [])) != len(meta_to.get(key, [])):
             raise TrivialAlignmentError(
                 f"Meta mark count mismatch for '{key}': "

@@ -169,6 +169,108 @@ class TestPerfectAlignment:
 
 
 # ---------------------------------------------------------------------------
+# Side-independent metadata marks (title / author / translator)
+# ---------------------------------------------------------------------------
+
+# The target credits a translator the source never had — the common machine-
+# translation case where the platform records itself as the translator.
+ASYM_FROM = [
+    "Some Author%%%%%author.",
+    "Some Title%%%%%title.",
+    "Chapter One%%%%%h2.",
+    "First sentence. Second sentence.",
+    "A lone paragraph here.",
+]
+ASYM_TO = [
+    "Некий Автор%%%%%author.",
+    "Некое Название%%%%%title.",
+    "Lingtrain platform (Sergei Averkiev)%%%%%translator.",
+    "Глава Один%%%%%h2.",
+    "Первое предложение. Второе предложение.",
+    "Одинокий абзац здесь.",
+]
+
+
+class TestSideIndependentMetadata:
+    @pytest.fixture
+    def aligned(self, tmp_path):
+        f = _write(tmp_path / "from.txt", ASYM_FROM)
+        t = _write(tmp_path / "to.txt", ASYM_TO)
+        out = str(tmp_path / "book.lt")
+        report = aligner.trivial_alignment(
+            f, t, "en", "ru", out, name="Asym", on_mismatch="error"
+        )
+        return out, report
+
+    def test_asymmetric_translator_aligns(self, aligned):
+        """An extra translator mark on one side does not break the 1:1 body."""
+        _, report = aligned
+        assert report["status"] == "perfect"
+        # 2 + 1 body sentences; metadata (incl. the extra translator) excluded.
+        assert report["from_sentences"] == report["to_sentences"] == 3
+        assert report["units"] == 3
+
+    def test_translator_recorded_to_side_only(self, aligned):
+        out, _ = aligned
+        meta = helper.get_meta_dict(out)
+        assert meta["translator_to"][0][0] == "Lingtrain platform (Sergei Averkiev)"
+        # The source had no translator -> no translator_from rows.
+        assert not meta.get("translator_from")
+
+    def test_body_marks_still_paired(self, aligned):
+        out, _ = aligned
+        meta = helper.get_meta_dict(out)
+        # title/author/h2 present on both sides, one occurrence each.
+        for key in ("title", "author", "h2"):
+            assert len(meta[f"{key}_from"]) == len(meta[f"{key}_to"]) == 1
+
+    def test_body_sentences_paired(self, aligned):
+        out, _ = aligned
+        pf, pt = helper.read_processing(out)
+        assert len(pf) == len(pt) == 3
+        assert pf[0] == "First sentence."
+        assert pt[0] == "Первое предложение."
+
+    def test_no_empty_cells(self, aligned):
+        out, _ = aligned
+        assert reader.is_empty_cells(out) is False
+
+    def test_both_sides_translator_values_may_differ(self, tmp_path):
+        """Source credits a human translator, target the platform — both kept,
+        values differ, alignment still trivial 1:1."""
+        frm = [
+            "Some Author%%%%%author.",
+            "John Doe%%%%%translator.",
+            "Chapter%%%%%h2.",
+            "A sentence.",
+        ]
+        to = [
+            "Некий Автор%%%%%author.",
+            "Lingtrain platform (Sergei Averkiev)%%%%%translator.",
+            "Глава%%%%%h2.",
+            "Предложение.",
+        ]
+        f = _write(tmp_path / "from.txt", frm)
+        t = _write(tmp_path / "to.txt", to)
+        out = str(tmp_path / "book.lt")
+        report = aligner.trivial_alignment(f, t, "en", "ru", out, on_mismatch="error")
+        meta = helper.get_meta_dict(out)
+        assert meta["translator_from"][0][0] == "John Doe"
+        assert meta["translator_to"][0][0] == "Lingtrain platform (Sergei Averkiev)"
+        assert report["status"] == "perfect"
+
+    def test_body_count_mismatch_still_raises(self, tmp_path):
+        """Differing body counts (ignoring metadata marks) still fail."""
+        frm = ["T%%%%%title.", "One.", "Two."]  # 2 body lines
+        to = ["T%%%%%title.", "X%%%%%translator.", "Один."]  # 1 body line
+        f = _write(tmp_path / "from.txt", frm)
+        t = _write(tmp_path / "to.txt", to)
+        out = str(tmp_path / "book.lt")
+        with pytest.raises(TrivialAlignmentError, match="count mismatch"):
+            aligner.trivial_alignment(f, t, "en", "ru", out)
+
+
+# ---------------------------------------------------------------------------
 # Per-paragraph sentence mismatch
 # ---------------------------------------------------------------------------
 

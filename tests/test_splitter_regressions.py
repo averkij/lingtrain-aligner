@@ -218,3 +218,57 @@ def test_split_ru_still_splits_plain_sentences():
         splitter.RU_CODE,
     )
     assert sentences == ["Дом стоял на холме.", "Ветер дул с моря."]
+
+
+def test_split_zh_reattaches_trailing_closing_bracket():
+    """A Chinese paragraph that ends a quotation with ``。」`` must NOT peel the
+    lone ``」`` off as its own sentence — it re-attaches to the last sentence so
+    the per-paragraph sentence count matches a 1:1 translation (whose closing
+    quote stays attached). Regression for the入蜀記 zh→ru alignment build."""
+
+    sentences = splitter.split_by_sentences(
+        ["坐中，國器云：「天生此為我用也。其後，石坐罪，竟荷校云。」"],
+        splitter.ZH_CODE,
+        clean_text=False,
+    )
+
+    assert sentences == [
+        "坐中，國器云：「天生此為我用也。",
+        "其後，石坐罪，竟荷校云。」",
+    ]
+
+
+def test_split_zh_reattaches_mid_paragraph_closer():
+    """A closing ``」`` that leads a following clause re-attaches to the prior
+    sentence, and the remaining clause stays its own sentence."""
+
+    sentences = splitter.split_by_sentences(
+        ["他說：「甲乙丙。」丁戊己。"],
+        splitter.ZH_CODE,
+        clean_text=False,
+    )
+
+    assert sentences == ["他說：「甲乙丙。」", "丁戊己。"]
+
+
+def test_split_zh_plain_sentences_unaffected():
+    """Ordinary Chinese prose without trailing closers still splits on 。 only."""
+
+    sentences = splitter.split_by_sentences(
+        ["山益奇怪。江平無波。夜無蚊。"],
+        splitter.ZH_CODE,
+        clean_text=False,
+    )
+    assert sentences == ["山益奇怪。", "江平無波。", "夜無蚊。"]
+
+
+def test_split_jp_still_reattaches_corner_bracket():
+    """split_jp's historic ``」`` re-attachment must be preserved by the shared
+    helper."""
+
+    sentences = splitter.split_by_sentences(
+        ["彼は言った。「そうだ。」次の文。"],
+        splitter.JP_CODE,
+        clean_text=False,
+    )
+    assert sentences == ["彼は言った。", "「そうだ。」", "次の文。"]

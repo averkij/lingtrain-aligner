@@ -108,19 +108,44 @@ def split_by_razdel(line):
 
 
 
+# Closing quotation / bracket glyphs that may trail a sentence terminator in
+# CJK text — e.g. a quotation that ends a paragraph prints as ``。」``. The
+# terminator-based split would otherwise peel the lone closer off as its own
+# bogus "sentence", which desynchronises 1:1 alignment against a target whose
+# closing quote stays attached to the last sentence. We re-attach any leading
+# run of these closers to the previous segment.
+_CJK_CLOSERS = "」』）》】〕〗〙〛〉”’"
+
+
+def _reattach_leading_closers(res):
+    """Fold a segment's leading run of CJK closing brackets onto the previous
+    segment. Generalises split_jp's historic single-``」`` handling so a
+    paragraph ending in ``。」`` does not split the ``」`` off as a sentence."""
+    out = []
+    for seg in res:
+        if out and seg and seg[0] in _CJK_CLOSERS:
+            i = 0
+            while i < len(seg) and seg[i] in _CJK_CLOSERS:
+                i += 1
+            out[-1] = out[-1] + seg[:i]
+            rest = seg[i:].lstrip()
+            if rest:
+                out.append(rest)
+        else:
+            out.append(seg)
+    return out
+
+
 def split_zh(line):
     """Split line in Chinese"""
-    return list(re.findall(r"[^!?。！？\.\!\?]+[!?。！？\.\!\?]?", line, flags=re.U))
+    res = list(re.findall(r"[^!?。！？\.\!\?]+[!?。！？\.\!\?]?", line, flags=re.U))
+    return _reattach_leading_closers(res)
 
 
 def split_jp(line):
     """Split line in Japanese"""
     res = list(re.findall(r"[^!?。！？\.\!\?]+[!?。！？\.\!\?]?", line, flags=re.U))
-    for i, x in enumerate(res):
-        if i > 0 and x and x[0] == "」":
-            res[i - 1] = res[i - 1] + "」"
-            res[i] = res[i][1:].lstrip()
-    return res
+    return _reattach_leading_closers(res)
 
 
 def split_hy(text):
