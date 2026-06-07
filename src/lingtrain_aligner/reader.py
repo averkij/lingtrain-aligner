@@ -3,6 +3,7 @@ from lingtrain_aligner import helper, preprocessor, resolver, aligner
 import json
 import pathlib
 import copy
+import sqlite3
 from operator import itemgetter
 
 H1_MARK = preprocessor.PARAGRAPH_MARK + preprocessor.H1
@@ -553,6 +554,39 @@ def sort_meta(metas):
             metas["items"][lang][mark].sort(key=lambda x: x[2])
 
 
+def get_verse_map(db_path, direction="from"):
+    """Map ``paragraph`` id -> poetry stanza index for verse rows.
+
+    A poem line is stored as a one-row ``paragraph`` carrying a non-zero ``verse``
+    stanza index (see ``aligner.trivial_alignment``). This returns ``{par_id:
+    stanza}`` for those rows so a renderer can lay a poem out with stanza breaks
+    (consecutive equal stanza ⇒ same stanza; a change ⇒ a stanza gap; absence ⇒
+    ordinary prose). Empty for a pre-7.4 DB without the ``verse`` column."""
+    table = "splitted_from" if direction != "to" else "splitted_to"
+    res = {}
+    with sqlite3.connect(db_path) as db:
+        try:
+            rows = db.execute(
+                f"select paragraph, verse from {table} where coalesce(verse, 0) > 0"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return res
+        for par, verse in rows:
+            res[par] = verse
+    return res
+
+
+# Verse/poetry rendering: tighten line spacing, drop the per-line paragraph
+# badge, and show a gap between stanzas. Appended to every generated book so a
+# poem laid out as one-line paragraphs reads as a poem.
+VERSE_CSS = """
+.dt-cell.verse { padding-top: 2px; padding-bottom: 2px; }
+.dt-cell.verse .book-par-id { display: none; }
+.dt-cell.verse .s { display: block; line-height: 1.35; }
+.dt-row.stanza-break { height: 0.9em; }
+"""
+
+
 def create_book(
     lang_ordered,
     paragraphs,
@@ -564,8 +598,14 @@ def create_book(
     styles=[],
     highlight="through",
     embed=False,
+    verse_map=None,
 ):
-    """Generate html"""
+    """Generate html.
+
+    ``verse_map`` (optional): ``{par_id: stanza}`` from :func:`get_verse_map`. When
+    given, paragraphs that are poetry lines render as tight verse with stanza
+    gaps; omit it (or pass ``None``) for ordinary prose rendering.
+    """
     # ensure path is existed
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -602,6 +642,7 @@ def create_book(
     <title>Lingtrain Magic Book</title>
     <meta charset="UTF-8">
     {css}
+    <style>{VERSE_CSS}</style>
 </head>
 <body>"""
         )
@@ -645,6 +686,8 @@ def create_book(
 
         next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
+        vmap = verse_map or {}
+        prev_verse = 0
         j = 0
         for actual_paragraphs_id in range(min_par_len):
             real_par_id = delimeters[actual_paragraphs_id]
@@ -653,10 +696,19 @@ def create_book(
                 _ = write_next_polyheader(res_html, next_mark, metas, lang_ordered)
                 next_mark, next_meta_par_id = get_next_meta_par_id(metas)
 
+            # Verse rendering: a poem line is a 1-row paragraph with a non-zero
+            # stanza index. Insert a stanza gap when the index changes inside a
+            # poem; tag the cell so VERSE_CSS lays it out as verse.
+            vs = vmap.get(real_par_id, 0)
+            if vs and prev_verse and vs != prev_verse:
+                res_html.write("<div class='dt-row stanza-break'></div>")
+            prev_verse = vs
+            cell_cls = "par dt-cell verse" if vs else "par dt-cell"
+
             res_html.write("<div class='dt-row'>")
             for lang in lang_ordered:
                 res_html.write(
-                    f"<div class='par dt-cell'><div class='book-par-id'>{real_par_id + 1}</div>"
+                    f"<div class='{cell_cls}'><div class='book-par-id'>{real_par_id + 1}</div>"
                 )
                 for k, sent in enumerate(paragraphs[lang][actual_paragraphs_id]):
                     sent_cycle_index = (

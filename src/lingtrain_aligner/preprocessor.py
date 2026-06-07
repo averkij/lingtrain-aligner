@@ -19,6 +19,15 @@ QUOTE_TEXT = "qtext"
 QUOTE_NAME = "qname"
 IMAGE = "image"
 SEGMENT = "segment"
+# A poetry/verse line. Unlike every other mark, VERSE is a *content-bearing,
+# atomic body unit*: it produces exactly ONE aligned row (the whole line), is
+# never joined with its neighbours and never sentence-split. It therefore lives
+# in MARK_META (so it is detected/parsed as a mark line and the splitter emits
+# it as-is instead of fusing verse lines) but is deliberately EXCLUDED from
+# MARK_META_EXTRACT — a verse line is real body text, not document metadata, so
+# it is stored in the splitted_* tables (with a per-verse `verse` stanza index),
+# not in the meta table.
+VERSE = "verse"
 
 MARK_META = [
     H1,
@@ -33,7 +42,13 @@ MARK_META = [
     QUOTE_NAME,
     IMAGE,
     TRANSLATOR,
+    VERSE,
 ]
+
+# Marks that are extracted into the ``meta`` table (document/position metadata
+# carrying no aligned body content). VERSE is intentionally absent: it is body
+# content and becomes an aligned row instead.
+MARK_META_EXTRACT = [m for m in MARK_META if m != VERSE]
 
 MARK_COUNTERS = [H1, H2, H3, H4, H5, DIVIDER, QUOTE_TEXT, QUOTE_NAME, IMAGE]
 MARKS_FOR_ADDING = [
@@ -217,7 +232,9 @@ def extract_marks(res, line, ix):
     if line.endswith(p_ending):
         # remove last occurence of PARAGRAPH_MARK
         line = "".join(line.rsplit(PARAGRAPH_MARK, 1))
-    for mark in MARK_META:
+    # MARK_META_EXTRACT (not MARK_META): a `verse` line is body content stored as
+    # an aligned row, never lifted into the meta table.
+    for mark in MARK_META_EXTRACT:
         ending = f"{PARAGRAPH_MARK}{mark}."
         if line.endswith(ending):
             res.append((line[: len(line) - len(ending)], ix, mark))

@@ -280,7 +280,8 @@ def create_table_splitted(db, direction):
                 embedding blob,
                 proxy_embedding blob,
                 model text,
-                inference text
+                inference text,
+                verse integer DEFAULT 0
             )
         """
         )
@@ -302,7 +303,8 @@ def create_table_splitted(db, direction):
                 embedding blob,
                 proxy_embedding blob,
                 model text,
-                inference text
+                inference text,
+                verse integer DEFAULT 0
             )
         """
         )
@@ -657,8 +659,9 @@ def get_splitted_from_by_id(db_path, ids):
             h4,
             h5,
             divider,
+            verse,
         ) in db.execute(
-            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
+            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider, coalesce(f.verse, 0) from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
         ):
             res.append(
                 (
@@ -673,6 +676,7 @@ def get_splitted_from_by_id(db_path, ids):
                     h4,
                     h5,
                     divider,
+                    verse,
                 )
             )
     return res
@@ -694,11 +698,12 @@ def get_splitted_to_by_id(db_path, ids):
             h4,
             h5,
             divider,
+            verse,
         ) in db.execute(
-            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
+            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider, coalesce(t.verse, 0) from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
             res.append(
-                (id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider)
+                (id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse)
             )
     return res
 
@@ -937,10 +942,16 @@ def get_splitted_dict(items):
 
 
 def get_paragraph_dict(items):
-    """Get paragraphs info as dict"""
+    """Get paragraphs info as dict.
+
+    Value tuple: (paragraph, h1, h2, h3, h4, h5, divider, verse). ``verse`` is the
+    poetry stanza index (0 = prose); kept last so existing positional consumers of
+    indices 0..6 are unaffected.
+    """
     res = dict()
     for item in items:
-        res[item[0]] = (item[4], item[5], item[6], item[7], item[8], item[9], item[10])
+        verse = item[11] if len(item) > 11 else 0
+        res[item[0]] = (item[4], item[5], item[6], item[7], item[8], item[9], item[10], verse)
     return res
 
 
@@ -1271,6 +1282,8 @@ def migrate_document_db(db_path):
     Migration steps applied:
       7.1 -> 7.2: add model TEXT and inference TEXT to splitted_from and splitted_to.
       7.2 -> 7.3: add reliable info-key upserts and backfill DB-level metadata.
+      7.3 -> 7.4: add `verse` integer column (poetry stanza index; 0 = prose) to
+                  splitted_from and splitted_to.
     """
     with sqlite3.connect(db_path) as db:
         current_version = float(db.execute("SELECT version FROM version").fetchone()[0])
@@ -1323,6 +1336,17 @@ def migrate_document_db(db_path):
             if inference_type and not get_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE):
                 set_info_value_conn(db, INFO_KEY_EMBEDDING_INFERENCE, inference_type)
             db.execute("UPDATE version SET version = ?", (con.DB_VERSION,))
+
+        # 7.3 -> 7.4: add the `verse` column (poetry stanza index). Column-presence
+        # gated rather than version-gated so it is idempotent and also repairs a DB
+        # whose version was already bumped above. 0 = prose/non-verse (default).
+        cols_from = [c[1] for c in db.execute("PRAGMA table_info(splitted_from)").fetchall()]
+        if "verse" not in cols_from:
+            db.execute("ALTER TABLE splitted_from ADD COLUMN verse integer DEFAULT 0")
+        cols_to = [c[1] for c in db.execute("PRAGMA table_info(splitted_to)").fetchall()]
+        if "verse" not in cols_to:
+            db.execute("ALTER TABLE splitted_to ADD COLUMN verse integer DEFAULT 0")
+        db.execute("UPDATE version SET version = ?", (con.DB_VERSION,))
 
         _ensure_processing_batch_indexes(db)
 

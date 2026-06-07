@@ -1280,7 +1280,7 @@ def fill_db_from_files(
             data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         i + 1,
@@ -1294,6 +1294,7 @@ def fill_db_from_files(
                         text[1][4],
                         text[1][5],
                         text[1][6],
+                        text[1][7] if len(text[1]) > 7 else 0,
                     )
                     for i, (text, proxy) in enumerate(data)
                 ],
@@ -1316,7 +1317,7 @@ def fill_db_from_files(
             data = zip(lines, ["" for _ in range(len(lines))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         i + 1,
@@ -1330,6 +1331,7 @@ def fill_db_from_files(
                         text[1][4],
                         text[1][5],
                         text[1][6],
+                        text[1][7] if len(text[1]) > 7 else 0,
                     )
                     for i, (text, proxy) in enumerate(data)
                 ],
@@ -1376,7 +1378,7 @@ def fill_db(
             data = zip(splitted_from, ["" for _ in range(len(splitted_from))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         i + 1,
@@ -1390,6 +1392,7 @@ def fill_db(
                         text[1][4],
                         text[1][5],
                         text[1][6],
+                        text[1][7] if len(text[1]) > 7 else 0,
                     )
                     for i, (text, proxy) in enumerate(data)
                 ],
@@ -1406,7 +1409,7 @@ def fill_db(
             data = zip(splitted_to, ["" for _ in range(len(splitted_to))])
         with sqlite3.connect(db_path) as db:
             db.executemany(
-                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         i + 1,
@@ -1420,6 +1423,7 @@ def fill_db(
                         text[1][4],
                         text[1][5],
                         text[1][6],
+                        text[1][7] if len(text[1]) > 7 else 0,
                     )
                     for i, (text, proxy) in enumerate(data)
                 ],
@@ -1468,6 +1472,45 @@ def _read_nonempty_lines(path):
     """Read a marked text file, returning stripped non-empty lines."""
     with open(path, mode="r", encoding="utf-8") as f:
         return [line.strip() for line in f.readlines() if line.strip()]
+
+
+def _read_body_with_verse_stanzas(path):
+    """Read a marked file and return ``(lines, stanzas)``.
+
+    ``lines`` is the stripped non-empty line list (the anchor sequence
+    ``trivial_alignment`` pairs on — identical to ``_read_nonempty_lines``).
+
+    ``stanzas`` is a parallel list: for a ``%%%%%verse.`` line it holds the poem
+    stanza index — a monotonic counter that increments at the start of each poem
+    (first verse line after non-verse) and at every blank line *within* a verse
+    run; for any non-verse line it is 0. Blank lines are still dropped from the
+    body (so they never desync alignment), they only advance this counter so the
+    stanza structure survives into the ``verse`` column and the rendered poem.
+    The counter is computed per side, so a stray blank-line difference between
+    source and translation degrades stanza rendering but never breaks alignment.
+    """
+    lines, stanzas = [], []
+    stanza = 0
+    prev_was_verse = False
+    pending_break = False
+    with open(path, mode="r", encoding="utf-8") as f:
+        for raw in f.readlines():
+            s = raw.strip()
+            if not s:
+                if prev_was_verse:
+                    pending_break = True
+                continue
+            if _detect_meta_mark(s) == preprocessor.VERSE:
+                if not prev_was_verse or pending_break:
+                    stanza += 1
+                stanzas.append(stanza)
+                prev_was_verse = True
+            else:
+                stanzas.append(0)
+                prev_was_verse = False
+            pending_break = False
+            lines.append(s)
+    return lines, stanzas
 
 
 def _resolve_split_langcode(langcode):
@@ -1559,8 +1602,8 @@ def trivial_alignment(
     lang_from_split = _resolve_split_langcode(lang_from)
     lang_to_split = _resolve_split_langcode(lang_to)
 
-    raw_from = _read_nonempty_lines(from_path)
-    raw_to = _read_nonempty_lines(to_path)
+    raw_from, verse_stanza_from = _read_body_with_verse_stanzas(from_path)
+    raw_to, verse_stanza_to = _read_body_with_verse_stanzas(to_path)
 
     # ``title``/``author``/``translator`` are side-independent metadata
     # (``META_SIDE_MARKS``): they are drained per side and recorded into ``meta``
@@ -1650,6 +1693,27 @@ def trivial_alignment(
                 f"  from: {line_from[:120]}\n  to:   {line_to[:120]}"
             )
 
+        if mark_from == preprocessor.VERSE:
+            # Verse line: a content-bearing ATOMIC body unit. Exactly one aligned
+            # row per side (the whole line — never sentence-split, never joined),
+            # paired 1:1. The `verse` column carries the poem stanza index so the
+            # reader can render the poem with stanza breaks. Paragraph counter is
+            # bumped like a one-sentence prose paragraph.
+            text_from = get_mark_value(line_from, preprocessor.VERSE)
+            text_to = get_mark_value(line_to, preprocessor.VERSE)
+            mt_from = marks_tuple(counters_from)
+            mt_to = marks_tuple(counters_to)
+            fid += 1
+            splitted_from.append((text_from, mt_from, verse_stanza_from[i]))
+            tid += 1
+            splitted_to.append((text_to, mt_to, verse_stanza_to[j]))
+            units.append(([fid], text_from, [tid], text_to))
+            counters_from[preprocessor.PARAGRAPH] += 1
+            counters_to[preprocessor.PARAGRAPH] += 1
+            i += 1
+            j += 1
+            continue
+
         if mark_from is not None:
             # Structural mark on both sides. Bump structural counters first, then
             # record meta with the current paragraph id, then bump the paragraph
@@ -1688,12 +1752,12 @@ def trivial_alignment(
         para_from_ids = []
         for s in sents_from:
             fid += 1
-            splitted_from.append((s, mt_from))
+            splitted_from.append((s, mt_from, 0))
             para_from_ids.append(fid)
         para_to_ids = []
         for s in sents_to:
             tid += 1
-            splitted_to.append((s, mt_to))
+            splitted_to.append((s, mt_to, 0))
             para_to_ids.append(tid)
 
         if sents_from and len(sents_from) == len(sents_to):
@@ -1776,17 +1840,17 @@ def trivial_alignment(
     db = sqlite3.connect(output_path)
     try:
         db.executemany(
-            "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into splitted_from(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6])
-                for idx, (text, m) in enumerate(splitted_from)
+                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6], v)
+                for idx, (text, m, v) in enumerate(splitted_from)
             ],
         )
         db.executemany(
-            "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider) values (?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into splitted_to(id, text, proxy_text, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse) values (?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6])
-                for idx, (text, m) in enumerate(splitted_to)
+                (idx + 1, text, "", 0, m[0], m[1], m[2], m[3], m[4], m[5], m[6], v)
+                for idx, (text, m, v) in enumerate(splitted_to)
             ],
         )
         db.executemany(
@@ -1918,24 +1982,57 @@ def update_proxy_text_to(db_path, proxy_texts, ids=[]):
 
 
 def handle_marks(lines):
-    """Handle markup. Write counters."""
+    """Handle markup. Write counters.
+
+    Each emitted row is ``(text, marks)`` where ``marks`` is the 8-tuple
+    ``(paragraph, h1, h2, h3, h4, h5, divider, verse)``. ``verse`` is the poetry
+    stanza index (0 for prose); a ``%%%%%verse.`` line is stripped to its bare
+    text and emitted as a normal content row (one stanza-indexed body unit),
+    never lifted into ``meta``. Blank lines are not emitted but advance the
+    stanza counter so a stanza break inside a poem survives.
+    """
     res = []
     marks_counter = defaultdict(int)
     meta = defaultdict(list)
     meta_par_ids = defaultdict(list)
-    marks = (0, 0, 0, 0, 0, 0)
+    marks = (0, 0, 0, 0, 0, 0, 0, 0)
     p_ending = tuple(
         [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
     )
+    verse_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.VERSE}."
+    stanza = 0
+    prev_was_verse = False
+    pending_break = False
 
     for line in lines:
         next_par = False
         line = line.strip()
 
+        # Blank line: drop it, but remember a stanza break inside a verse run.
+        if not line:
+            if prev_was_verse:
+                pending_break = True
+            continue
+
         if line.endswith(p_ending):
             # remove last occurence of PARAGRAPH_MARK
             line = "".join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
             next_par = True
+
+        # Verse line: strip the mark, treat as a one-unit content paragraph and
+        # assign its poem stanza index.
+        verse_idx = 0
+        if line.endswith(verse_ending):
+            line = line[: -len(verse_ending)]
+            if not prev_was_verse or pending_break:
+                stanza += 1
+            verse_idx = stanza
+            next_par = True
+            prev_was_verse = True
+            pending_break = False
+        else:
+            prev_was_verse = False
+            pending_break = False
 
         for mark in preprocessor.MARK_COUNTERS:
             update_mark_counter(marks_counter, line, mark)
@@ -1954,6 +2051,7 @@ def handle_marks(lines):
                 marks_counter[preprocessor.H4],
                 marks_counter[preprocessor.H5],
                 marks_counter[preprocessor.DIVIDER],
+                verse_idx,
             )
             res.append((line, marks))
 
@@ -1982,11 +2080,13 @@ def get_mark_value(line, mark):
 
 
 def get_all_extraction_endings():
-    return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META])
+    # MARK_META_EXTRACT excludes `verse`: a verse line is emitted as a content
+    # row by handle_marks, not diverted into the meta table.
+    return tuple([f"{preprocessor.PARAGRAPH_MARK}{m}." for m in preprocessor.MARK_META_EXTRACT])
 
 
 def update_meta(meta, line, meta_par_ids, par_id):
-    for mark in preprocessor.MARK_META:
+    for mark in preprocessor.MARK_META_EXTRACT:
         val = get_mark_value(line, mark)
         if val:
             meta[mark].append(val)
