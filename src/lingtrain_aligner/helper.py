@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import sqlite3
@@ -12,6 +13,12 @@ INFO_KEY_NAME = "name"
 INFO_KEY_CREATED_AT = "created_at"
 INFO_KEY_LAST_EDITED_AT = "last_edited_at"
 INFO_KEY_CONTENT_VERSION = "app_content_version"
+# Multilingual (.ltm) info keys: ``format`` marks the file as a multibook and
+# ``source_lang`` records the structural reference edition (also flagged
+# ``is_source`` in the ``languages`` table).
+INFO_KEY_FORMAT = "format"
+INFO_KEY_SOURCE_LANG = "source_lang"
+LTM_FORMAT = "ltm"
 INFO_KEY_EMBEDDING_MODEL = "embedding_model"
 INFO_KEY_EMBEDDING_MODEL_NAME = "embedding_model_name"
 INFO_KEY_EMBEDDING_MODEL_RESOLVED_NAME = "embedding_model_resolved_name"
@@ -1431,3 +1438,167 @@ def lazy_property(func):
         return getattr(self, attr_name)
 
     return _lazy_property
+
+
+# ---------------------------------------------------------------------------
+# Multilingual (.ltm) format — schema authority + accessors
+# ---------------------------------------------------------------------------
+# A .ltm stores N strictly-1:1:N editions in ONE render-only SQLite file. Unlike
+# the bilingual .lt it has NO processing_/doc_index/batches/embeddings: under
+# controlled (smart-translator) translation every edition shares the same body
+# structure, so the alignment is implicit in the (lang, paragraph, sentence)
+# coordinate. The plain .lt schema (init_document_db) is untouched.
+
+
+def init_multi_db(db_path):
+    """Initialise a multilingual (.ltm) book with the multibook table structure.
+
+    Tables:
+      * ``version`` — ``LTM_VERSION`` (distinct namespace from ``.lt`` DB_VERSION).
+      * ``info`` — ``format='ltm'``, ``source_lang``, created/last_edited/content
+        version (key-unique, same upsert discipline as ``.lt``).
+      * ``languages(lang, ord, is_source, added_at)`` — one row per edition,
+        ``is_source`` flags the structural reference; generalises ``.lt``
+        ``languages(key='from'|'to')``.
+      * ``structure(paragraph, kind, sentence_count, verse)`` — the canonical body
+        skeleton shared by every edition (one row per body line).
+      * ``splitted(lang, paragraph, sentence, id, text, …)`` — per-edition sentence
+        rows; real key is the ``(lang, paragraph, sentence)`` coordinate (no PK,
+        mirroring ``.lt`` ``splitted_*``).
+      * ``meta(lang, key, …)`` — per-edition marks with BARE keys (``'title'`` not
+        ``'title_from'``).
+      * ``files(lang, …)``, ``history`` — provenance / audit.
+    """
+    if os.path.isfile(db_path):
+        # Windows: a lingering sqlite handle from a GC cycle keeps a file lock;
+        # collect before removing (mirrors aligner.trivial_alignment).
+        gc.collect()
+        os.remove(db_path)
+    db = sqlite3.connect(db_path)
+    try:
+        db.execute("create table version(id integer primary key, version text)")
+        db.execute("create table info(id integer primary key, key text, val text)")
+        db.execute(
+            "create table languages(id integer primary key, lang text, ord integer, "
+            "is_source integer default 0, added_at text)"
+        )
+        db.execute("create unique index ux_languages_lang on languages(lang)")
+        db.execute(
+            "create table structure(paragraph integer primary key, kind text, "
+            "sentence_count integer, verse integer default 0)"
+        )
+        db.execute(
+            "create table splitted(lang text, paragraph integer, sentence integer, "
+            "id integer, text text, proxy_text text default '', exclude integer default 0, "
+            "verse integer default 0)"
+        )
+        db.execute(
+            "create unique index ux_splitted_coord on splitted(lang, paragraph, sentence)"
+        )
+        db.execute("create index ix_splitted_lang_par on splitted(lang, paragraph)")
+        db.execute(
+            'create table meta(id integer primary key, lang text, key text, val text, '
+            'occurence integer, par_id integer, deleted integer DEFAULT 0, comment text DEFAULT "")'
+        )
+        db.execute("create index ix_meta_lang_key on meta(lang, key)")
+        db.execute(
+            "create table files(id integer primary key, lang text, name text, guid text, added_at text)"
+        )
+        db.execute(
+            "create table history(id integer primary key, operation text, lang text, "
+            "insert_ts text, parameters text)"
+        )
+        _ensure_info_key_index(db)
+        created_at = _utc_now_iso()
+        set_info_value_conn(db, INFO_KEY_FORMAT, LTM_FORMAT)
+        set_info_value_conn(db, INFO_KEY_CREATED_AT, created_at)
+        set_info_value_conn(db, INFO_KEY_LAST_EDITED_AT, created_at)
+        set_info_value_conn(db, INFO_KEY_CONTENT_VERSION, 1)
+        db.execute("insert into version(version) values (?)", (con.LTM_VERSION,))
+        db.commit()
+    finally:
+        # sqlite3's `with` only manages the transaction; close explicitly so a
+        # re-run / add_language can overwrite the file on Windows.
+        db.close()
+
+
+def is_ltm(db_path):
+    """True when ``db_path`` is a multilingual (.ltm) file. Probes
+    ``info.format == 'ltm'`` first, then falls back to the presence of the
+    ``structure`` table. The routing primitive for ``.lt`` vs ``.ltm``."""
+    try:
+        with sqlite3.connect(db_path) as db:
+            if get_info_value_conn(db, INFO_KEY_FORMAT) == LTM_FORMAT:
+                return True
+            row = db.execute(
+                "select name from sqlite_master where type='table' and name='structure'"
+            ).fetchone()
+            return row is not None
+    except sqlite3.Error:
+        return False
+
+
+def get_ltm_languages(db_path):
+    """Editions as ``[{lang, ord, is_source, added_at}]`` ordered by ``ord``.
+    Generalises ``get_lang_codes`` to N languages."""
+    with sqlite3.connect(db_path) as db:
+        rows = db.execute(
+            "select lang, ord, is_source, added_at from languages order by ord"
+        ).fetchall()
+    return [
+        {"lang": r[0], "ord": r[1], "is_source": bool(r[2]), "added_at": r[3]}
+        for r in rows
+    ]
+
+
+def get_ltm_lang_codes(db_path):
+    """Ordered list of edition language codes (convenience over get_ltm_languages)."""
+    return [d["lang"] for d in get_ltm_languages(db_path)]
+
+
+def get_ltm_source_lang(db_path):
+    """The structural reference edition's language code (``is_source``), falling
+    back to the ``info.source_lang`` key."""
+    with sqlite3.connect(db_path) as db:
+        row = db.execute(
+            "select lang from languages where is_source = 1 order by ord limit 1"
+        ).fetchone()
+        if row:
+            return row[0]
+        return get_info_value_conn(db, INFO_KEY_SOURCE_LANG)
+
+
+def get_ltm_structure(db_path):
+    """Canonical body skeleton as ``[{paragraph, kind, sentence_count, verse}]``
+    ordered by ``paragraph``. ``kind`` is ``'text'``, ``'verse'`` or a structural
+    mark (``'h1'..'h5'``/``'divider'``/``'qtext'``/``'qname'``/``'image'``)."""
+    with sqlite3.connect(db_path) as db:
+        rows = db.execute(
+            "select paragraph, kind, sentence_count, verse from structure order by paragraph"
+        ).fetchall()
+    return [
+        {"paragraph": r[0], "kind": r[1], "sentence_count": r[2], "verse": r[3]}
+        for r in rows
+    ]
+
+
+def get_ltm_meta_for_lang(db_path, lang):
+    """Per-edition meta as ``{mark: [(val, occurence, par_id, id)]}`` with BARE
+    keys (no ``_from``/``_to`` suffix to strip). The ``.ltm`` parallel of
+    ``reader.prepare_meta`` over ``get_meta_dict``."""
+    res = defaultdict(list)
+    with sqlite3.connect(db_path) as db:
+        for key, val, occurence, par_id, id in db.execute(
+            "select key, val, occurence, par_id, id from meta "
+            "where lang = ? and deleted = 0 order by par_id, occurence",
+            (lang,),
+        ):
+            res[key].append((val, occurence, par_id, id))
+    return res
+
+
+def touch_ltm_change_conn(db, ts=None):
+    """Bump ``app_content_version`` + ``last_edited_at`` on a ``.ltm`` (cache
+    invalidation on add-language / replace re-upload). Format-agnostic; reuses the
+    ``.lt`` info-table machinery."""
+    return touch_alignment_change_conn(db, ts=ts, bump_version=True)

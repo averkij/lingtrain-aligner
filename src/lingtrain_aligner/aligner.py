@@ -1930,6 +1930,484 @@ def trivial_alignment(
     return report
 
 
+# ---------------------------------------------------------------------------
+# Multilingual (.ltm) trivial alignment — N strictly-1:1:N editions in one file
+# ---------------------------------------------------------------------------
+# This is the multilingual analogue of trivial_alignment: it builds a render-only
+# .ltm directly from N structurally-parallel marked texts. It does NOT reuse the
+# legacy reader.get_paragraphs_polybook / create_polybook merge (those reconcile
+# DISAGREEING embedding-aligned segmentations at read time — impossible and lossy
+# under controlled strict-1:1:N translation). The builder generalises
+# trivial_alignment's two cursors to N over a single ``source_lang`` reference and
+# records the shared body skeleton into the ``structure`` table.
+
+
+def flatten_meta_multi(meta, meta_par_ids, lang):
+    """Flatten one edition's meta into ``(lang, bare_key, val, occurence, par_id)``
+    rows for the ``.ltm`` ``meta`` table. Unlike ``flatten_meta`` (which emits
+    ``'<mark>_from'``/``'<mark>_to'`` keys) the key stays BARE."""
+    res = []
+    for key in meta:
+        for i, (val, par_id) in enumerate(zip(meta[key], meta_par_ids[key])):
+            res.append((lang, key, val, i, par_id))
+    return res
+
+
+def _ltm_mark_mismatch(lang, paragraph, expected_kind, got_mark, line):
+    return (
+        f"Markup mismatch adding '{lang}' at paragraph {paragraph}: the stored "
+        f"structure expects kind={expected_kind!r} but this edition's line is "
+        f"mark={got_mark!r}.\n  {line[:160]}"
+    )
+
+
+def trivial_alignment_multi(
+    marked_paths_by_lang,
+    output_path,
+    *,
+    source_lang,
+    name="",
+    clean_text_by_lang=None,
+    on_mismatch="error",
+    file_names=None,
+    guids=None,
+):
+    """Build a multilingual (.ltm) book from N structurally-parallel marked texts.
+
+    Every edition is produced under full control (smart_translator), so all share
+    the exact same paragraph structure and Lingtrain markup and the alignment is
+    trivial: sentences line up 1:1:...:1 inside every paragraph. One ``source_lang``
+    edition is the immutable structural reference (``is_source``); future
+    :func:`add_language` calls validate against the ``structure`` it defines.
+
+    Args:
+        marked_paths_by_lang: ``{langcode: path}`` for every edition.
+        output_path: path of the ``.ltm`` to create (overwritten if present).
+        source_lang: which edition defines the canonical structure (required;
+            must be a key of ``marked_paths_by_lang``).
+        name: human-readable book name stored in ``info``.
+        clean_text_by_lang: per-edition ``clean_text`` flag for the splitter
+            (zh/CJK must be ``True`` or the splitter desyncs sentence counts).
+        on_mismatch: ``"error"`` (default, strict) raises listing offending
+            paragraphs; ``"merge"`` emits a single merged row per edition for a
+            paragraph whose editions disagree on sentence count.
+        file_names, guids: optional per-edition ``files`` provenance.
+
+    Returns:
+        A report dict (langs, source_lang, paragraphs, per-lang sentence counts,
+        structural mark/verse counts, merged paragraph details, status).
+    """
+    if on_mismatch not in ("merge", "error"):
+        raise ValueError("on_mismatch must be 'merge' or 'error'")
+    if source_lang not in marked_paths_by_lang:
+        raise ValueError(
+            f"source_lang '{source_lang}' is not among the editions "
+            f"{list(marked_paths_by_lang)}"
+        )
+    if len(marked_paths_by_lang) < 2:
+        raise ValueError("trivial_alignment_multi needs at least 2 editions")
+
+    # Ordered langs: source first, then the rest in input order.
+    langs = [source_lang] + [l for l in marked_paths_by_lang if l != source_lang]
+    clean_text = {
+        l: bool((clean_text_by_lang or {}).get(l, False)) for l in langs
+    }
+    split_lang = {l: _resolve_split_langcode(l) for l in langs}
+
+    raw, stanzas = {}, {}
+    for lang in langs:
+        raw[lang], stanzas[lang] = _read_body_with_verse_stanzas(
+            marked_paths_by_lang[lang]
+        )
+
+    # Body-count invariant: title/author/translator (META_SIDE_MARKS) are
+    # side-independent and excluded; everything else must match across editions.
+    def _body_count(lines):
+        return sum(1 for ln in lines if _detect_meta_mark(ln) not in META_SIDE_MARKS)
+
+    n_body_src = _body_count(raw[source_lang])
+    for lang in langs:
+        n = _body_count(raw[lang])
+        if n != n_body_src:
+            raise TrivialAlignmentError(
+                f"Body line count mismatch: source '{source_lang}' has {n_body_src} "
+                f"body line(s), '{lang}' has {n} (excluding title/author/translator "
+                f"metadata). Multilingual trivial alignment requires identical "
+                f"paragraph structure (one paragraph or one mark per line)."
+            )
+
+    structure = []  # (paragraph, kind, sentence_count, verse)
+    splitted = {l: [] for l in langs}  # (paragraph, sentence, id, text, verse)
+    meta = {l: defaultdict(list) for l in langs}
+    meta_par = {l: defaultdict(list) for l in langs}
+    sent_id = {l: 0 for l in langs}
+    cursors = {l: 0 for l in langs}
+    merged = []
+    paragraph = 0
+
+    def _side_mark(lang):
+        idx = cursors[lang]
+        if idx >= len(raw[lang]):
+            return None
+        mark = _detect_meta_mark(raw[lang][idx])
+        return mark if mark in META_SIDE_MARKS else None
+
+    while True:
+        # Drain a side-independent metadata mark from any edition sitting on one.
+        # Like trivial_alignment, metadata is consumed before body lines so the
+        # body stays aligned even when editions carry a different metadata set.
+        drained = False
+        for lang in langs:
+            mark = _side_mark(lang)
+            if mark is not None:
+                meta[lang][mark].append(get_mark_value(raw[lang][cursors[lang]], mark))
+                meta_par[lang][mark].append(paragraph)
+                cursors[lang] += 1
+                drained = True
+                break
+        if drained:
+            continue
+        if all(cursors[l] >= len(raw[l]) for l in langs):
+            break
+
+        lines = {l: raw[l][cursors[l]] for l in langs}
+        marks = {l: _detect_meta_mark(lines[l]) for l in langs}
+        src_mark = marks[source_lang]
+        for lang in langs:
+            if marks[lang] != src_mark:
+                raise TrivialAlignmentError(
+                    f"Markup mismatch at body paragraph {paragraph + 1}: source "
+                    f"'{source_lang}' mark={src_mark!r}, '{lang}' mark={marks[lang]!r}.\n"
+                    f"  {source_lang}: {lines[source_lang][:120]}\n"
+                    f"  {lang}: {lines[lang][:120]}"
+                )
+
+        paragraph += 1
+
+        if src_mark == preprocessor.VERSE:
+            # Atomic verse line: one row per edition, stanza index from source.
+            structure.append(
+                (paragraph, preprocessor.VERSE, 1, stanzas[source_lang][cursors[source_lang]])
+            )
+            for lang in langs:
+                text = get_mark_value(lines[lang], preprocessor.VERSE)
+                sent_id[lang] += 1
+                splitted[lang].append(
+                    (paragraph, 1, sent_id[lang], text, stanzas[lang][cursors[lang]])
+                )
+                cursors[lang] += 1
+            continue
+
+        if src_mark is not None:
+            # Structural mark (h1-h5/divider/qtext/qname/image): content -> meta,
+            # not splitted; one structure row with sentence_count 0.
+            structure.append((paragraph, src_mark, 0, 0))
+            for lang in langs:
+                meta[lang][src_mark].append(get_mark_value(lines[lang], src_mark))
+                meta_par[lang][src_mark].append(paragraph)
+                cursors[lang] += 1
+            continue
+
+        # Regular prose paragraph: split each edition independently.
+        sents = {
+            l: [
+                s.strip()
+                for s in splitter.split_by_sentences([lines[l]], split_lang[l], clean_text[l])
+                if s.strip()
+            ]
+            for l in langs
+        }
+        counts = {l: len(sents[l]) for l in langs}
+        src_count = counts[source_lang]
+
+        if src_count == 0 and all(c == 0 for c in counts.values()):
+            # Paragraph empty on every edition after splitting — emit nothing.
+            paragraph -= 1
+            for lang in langs:
+                cursors[lang] += 1
+            continue
+
+        if src_count > 0 and all(counts[l] == src_count for l in langs):
+            sc = src_count
+        else:
+            # Differing (or one-sided) split: keep the paragraph as one merged
+            # unit per edition so the book stays complete and paragraph-aligned.
+            merged.append({"paragraph": paragraph, "counts": dict(counts)})
+            for lang in langs:
+                sents[lang] = [" ".join(sents[lang])] if sents[lang] else [""]
+            sc = 1
+
+        structure.append((paragraph, "text", sc, 0))
+        for lang in langs:
+            for k, s in enumerate(sents[lang], start=1):
+                sent_id[lang] += 1
+                splitted[lang].append((paragraph, k, sent_id[lang], s, 0))
+            cursors[lang] += 1
+
+    if on_mismatch == "error" and merged:
+        preview = "\n".join(
+            f"  paragraph {m['paragraph']}: "
+            + ", ".join(f"{l}={m['counts'][l]}" for l in langs)
+            for m in merged[:20]
+        )
+        more = "\n  ..." if len(merged) > 20 else ""
+        raise TrivialAlignmentError(
+            f"Sentence-count mismatch in {len(merged)} paragraph(s) across editions; "
+            f"cannot align strictly 1:1:N. Use on_mismatch='merge' to merge them, or "
+            f"fix the texts so each paragraph splits into the same number of sentences "
+            f"in every language.\n{preview}{more}"
+        )
+
+    # ---- write the .ltm ----
+    if os.path.isfile(output_path):
+        gc.collect()
+    helper.init_multi_db(output_path)
+
+    file_names = file_names or {}
+    guids = guids or {}
+    now = helper._utc_now_iso()
+
+    db = sqlite3.connect(output_path)
+    try:
+        db.executemany(
+            "insert into languages(lang, ord, is_source, added_at) values (?,?,?,?)",
+            [(l, i, 1 if l == source_lang else 0, now) for i, l in enumerate(langs)],
+        )
+        db.executemany(
+            "insert into structure(paragraph, kind, sentence_count, verse) values (?,?,?,?)",
+            structure,
+        )
+        for lang in langs:
+            db.executemany(
+                "insert into splitted(lang, paragraph, sentence, id, text, verse) "
+                "values (?,?,?,?,?,?)",
+                [(lang, p, s, i, t, v) for (p, s, i, t, v) in splitted[lang]],
+            )
+            db.executemany(
+                "insert into meta(lang, key, val, occurence, par_id) values (?,?,?,?,?)",
+                flatten_meta_multi(meta[lang], meta_par[lang], lang),
+            )
+            db.execute(
+                "insert into files(lang, name, guid, added_at) values (?,?,?,?)",
+                (
+                    lang,
+                    file_names.get(lang) or os.path.basename(marked_paths_by_lang[lang]),
+                    guids.get(lang) or uuid.uuid4().hex,
+                    now,
+                ),
+            )
+        helper.set_info_value_conn(db, helper.INFO_KEY_SOURCE_LANG, source_lang)
+        helper.set_info_value_conn(db, helper.INFO_KEY_NAME, name)
+        db.execute(
+            "insert into history(operation, lang, insert_ts, parameters) values (?,?,?,?)",
+            (
+                con.OPERATION_TRIVIAL_MULTI,
+                source_lang,
+                now,
+                json.dumps(
+                    {"on_mismatch": on_mismatch, "langs": langs, "merged_paragraphs": len(merged)}
+                ),
+            ),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    report = {
+        "output": output_path,
+        "format": "ltm",
+        "langs": langs,
+        "source_lang": source_lang,
+        "paragraphs": len(structure),
+        "sentences_by_lang": {l: len(splitted[l]) for l in langs},
+        "structural_marks": sum(1 for s in structure if s[1] in preprocessor.MARK_COUNTERS),
+        "verse_lines": sum(1 for s in structure if s[1] == preprocessor.VERSE),
+        "merged_paragraphs": len(merged),
+        "merged_details": merged,
+        "status": "perfect" if not merged else "merged",
+    }
+    logging.info(
+        "trivial_alignment_multi: %s editions, %s paragraphs (%s merged) -> %s",
+        len(langs),
+        len(structure),
+        len(merged),
+        output_path,
+    )
+    return report
+
+
+def add_language(
+    ltm_path,
+    marked_path,
+    lang,
+    *,
+    clean_text=False,
+    on_mismatch="error",
+    file_name=None,
+    guid=None,
+    replace=False,
+):
+    """Add (or, with ``replace=True``, overwrite) one edition in an existing
+    ``.ltm``, validating it against the stored ``structure``.
+
+    Purely additive: only this language's ``splitted``/``meta``/``files``/
+    ``languages`` rows are written; NO other edition is read or modified, so every
+    existing reader position is preserved. ``on_mismatch='merge'`` is refused here
+    because merging would mutate the shared ``structure.sentence_count`` that the
+    other editions already satisfy — a structurally divergent edition must be
+    fixed (re-punctuated) or the book rebuilt.
+    """
+    if on_mismatch != "error":
+        raise ValueError(
+            "add_language only supports on_mismatch='error' (merging would mutate "
+            "the shared structure other editions already satisfy)"
+        )
+    if not helper.is_ltm(ltm_path):
+        raise TrivialAlignmentError(f"{ltm_path} is not a multilingual (.ltm) file")
+
+    existing = {d["lang"] for d in helper.get_ltm_languages(ltm_path)}
+    if lang in existing and not replace:
+        raise TrivialAlignmentError(
+            f"Edition '{lang}' already exists in {ltm_path}; pass replace=True to overwrite it."
+        )
+
+    structure = helper.get_ltm_structure(ltm_path)  # ordered by paragraph
+    split_lang = _resolve_split_langcode(lang)
+    raw, stanzas = _read_body_with_verse_stanzas(marked_path)
+
+    body_idx_of = [
+        i for i, ln in enumerate(raw) if _detect_meta_mark(ln) not in META_SIDE_MARKS
+    ]
+    if len(body_idx_of) != len(structure):
+        raise TrivialAlignmentError(
+            f"Body line count mismatch adding '{lang}': edition has "
+            f"{len(body_idx_of)} body line(s), the stored structure has "
+            f"{len(structure)}. The edition must match the source structure exactly."
+        )
+
+    new_meta = defaultdict(list)
+    new_meta_par = defaultdict(list)
+    splitted_rows = []  # (paragraph, sentence, id, text, verse)
+    sid = 0
+    body_idx = 0
+
+    for idx, ln in enumerate(raw):
+        mark = _detect_meta_mark(ln)
+        if mark in META_SIDE_MARKS:
+            # Render before the next unconsumed body paragraph (par_id 0 at top).
+            par_id = structure[body_idx]["paragraph"] - 1 if body_idx < len(structure) else 0
+            new_meta[mark].append(get_mark_value(ln, mark))
+            new_meta_par[mark].append(max(par_id, 0))
+            continue
+
+        srow = structure[body_idx]
+        paragraph, kind = srow["paragraph"], srow["kind"]
+
+        if kind == preprocessor.VERSE:
+            if mark != preprocessor.VERSE:
+                raise TrivialAlignmentError(_ltm_mark_mismatch(lang, paragraph, "verse", mark, ln))
+            sid += 1
+            splitted_rows.append(
+                (paragraph, 1, sid, get_mark_value(ln, preprocessor.VERSE), stanzas[idx])
+            )
+        elif kind == "text":
+            if mark is not None:
+                raise TrivialAlignmentError(_ltm_mark_mismatch(lang, paragraph, "text", mark, ln))
+            sents = [
+                s.strip()
+                for s in splitter.split_by_sentences([ln], split_lang, clean_text)
+                if s.strip()
+            ]
+            sc = srow["sentence_count"]
+            if sc == 1:
+                # The paragraph is stored as a single unit (single sentence, or a
+                # merged paragraph) — join whatever this edition split into.
+                sents = [" ".join(sents)] if sents else [""]
+            elif len(sents) != sc:
+                raise TrivialAlignmentError(
+                    f"Sentence-count mismatch adding '{lang}' at paragraph {paragraph}: "
+                    f"this edition splits into {len(sents)} sentence(s) but the stored "
+                    f"structure expects {sc}. Re-punctuate the translation to match, or "
+                    f"rebuild the book.\n  {ln[:160]}"
+                )
+            for k, s in enumerate(sents, start=1):
+                sid += 1
+                splitted_rows.append((paragraph, k, sid, s, 0))
+        else:
+            # Structural mark (h1-h5/divider/qtext/qname/image): content -> meta.
+            if mark != kind:
+                raise TrivialAlignmentError(_ltm_mark_mismatch(lang, paragraph, kind, mark, ln))
+            new_meta[kind].append(get_mark_value(ln, kind))
+            new_meta_par[kind].append(paragraph)
+        body_idx += 1
+
+    # ---- additive write ----
+    if os.path.isfile(ltm_path):
+        gc.collect()
+    now = helper._utc_now_iso()
+    replaced = replace and lang in existing
+    db = sqlite3.connect(ltm_path)
+    try:
+        # Replacing an edition preserves its position (ord) and is_source flag so
+        # a corrected translation never reorders the editions or demotes a source.
+        keep_ord, keep_is_source = None, 0
+        if replaced:
+            row = db.execute(
+                "select ord, is_source from languages where lang=?", (lang,)
+            ).fetchone()
+            if row:
+                keep_ord, keep_is_source = row[0], row[1]
+            db.execute("delete from splitted where lang=?", (lang,))
+            db.execute("delete from meta where lang=?", (lang,))
+            db.execute("delete from files where lang=?", (lang,))
+            db.execute("delete from languages where lang=?", (lang,))
+        if keep_ord is None:
+            keep_ord = (
+                db.execute("select coalesce(max(ord), -1) from languages").fetchone()[0] + 1
+            )
+        db.execute(
+            "insert into languages(lang, ord, is_source, added_at) values (?,?,?,?)",
+            (lang, keep_ord, keep_is_source, now),
+        )
+        db.executemany(
+            "insert into splitted(lang, paragraph, sentence, id, text, verse) values (?,?,?,?,?,?)",
+            [(lang, p, s, i, t, v) for (p, s, i, t, v) in splitted_rows],
+        )
+        db.executemany(
+            "insert into meta(lang, key, val, occurence, par_id) values (?,?,?,?,?)",
+            flatten_meta_multi(new_meta, new_meta_par, lang),
+        )
+        db.execute(
+            "insert into files(lang, name, guid, added_at) values (?,?,?,?)",
+            (lang, file_name or os.path.basename(marked_path), guid or uuid.uuid4().hex, now),
+        )
+        db.execute(
+            "insert into history(operation, lang, insert_ts, parameters) values (?,?,?,?)",
+            (con.OPERATION_ADD_LANGUAGE, lang, now, json.dumps({"replace": replaced})),
+        )
+        helper.touch_ltm_change_conn(db)
+        db.commit()
+    finally:
+        db.close()
+
+    report = {
+        "output": ltm_path,
+        "lang": lang,
+        "replaced": replaced,
+        "paragraphs": len(structure),
+        "sentences": len(splitted_rows),
+        "status": "ok",
+    }
+    logging.info(
+        "add_language: '%s' (%s, +%s rows) -> %s",
+        lang,
+        "replaced" if replaced else "added",
+        len(splitted_rows),
+        ltm_path,
+    )
+    return report
+
+
 def load_proxy(db_path, filepath, direction):
     lines_proxy = []
     if os.path.isfile(filepath):

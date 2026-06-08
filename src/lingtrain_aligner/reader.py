@@ -125,6 +125,91 @@ def get_paragraphs(db_path, direction="from", par_amount=0):
     return paragraphs_dict, par_ids, meta_info, sent_counter_dict
 
 
+# ---------------------------------------------------------------------------
+# Multilingual (.ltm) reader — reads ONE multibook file directly
+# ---------------------------------------------------------------------------
+# NOTE: this is NOT get_paragraphs_polybook. The polybook reader below merges N
+# separate bilingual .lt files (reconciling disagreeing segmentations) only to
+# render a static HTML book. get_paragraphs_multi reads a single .ltm where every
+# edition already shares the (paragraph, sentence) coordinate, so paragraphs are
+# sliced directly with no merge_* machinery.
+
+
+def get_paragraphs_multi(ltm_path, langs_subset=None, par_amount=0):
+    """Read a multilingual (.ltm) book directly for the requested editions.
+
+    Returns ``(paragraphs_dict, par_ids, meta_info, sent_counter, verse_map)``:
+      * ``paragraphs_dict``: ``{lang: [[sentence, …] per body paragraph]}`` for
+        ``langs_subset`` (default: all editions, ordered by ``ord``). Body
+        paragraphs are the ``structure`` rows of kind ``text``/``verse``;
+        structural-mark rows live in ``meta`` and are interleaved by a renderer.
+      * ``par_ids``: the canonical ``structure.paragraph`` id of each body
+        paragraph (so header marks can be interleaved by ``par_id``).
+      * ``meta_info``: ``{"items": {lang: {mark: [(val, occ, par_id, id)]}},
+        "main_lang_code": langs[0]}`` — bare mark keys per edition.
+      * ``sent_counter``: ``{lang: total sentence rows}``.
+      * ``verse_map``: ``{par_id: stanza}`` for verse paragraphs (shared across
+        editions; taken from ``structure``).
+    """
+    all_langs = helper.get_ltm_lang_codes(ltm_path)
+    if langs_subset:
+        langs = [l for l in langs_subset if l in all_langs]
+    else:
+        langs = all_langs
+    if not langs:
+        raise ValueError(
+            f"No valid languages requested for this .ltm book (have {all_langs})"
+        )
+
+    structure = helper.get_ltm_structure(ltm_path)
+    body = [s for s in structure if s["kind"] in ("text", preprocessor.VERSE)]
+    if par_amount and par_amount > 0:
+        body = body[:par_amount]
+    par_ids = [s["paragraph"] for s in body]
+    body_par_set = set(par_ids)
+    verse_map = {s["paragraph"]: s["verse"] for s in body if s["verse"]}
+
+    paragraphs_dict, sent_counter = {}, {}
+    with sqlite3.connect(ltm_path) as db:
+        for lang in langs:
+            by_par = defaultdict(list)
+            total = 0
+            for paragraph, text in db.execute(
+                "select paragraph, text from splitted where lang=? order by paragraph, sentence",
+                (lang,),
+            ):
+                total += 1
+                if paragraph in body_par_set:
+                    by_par[paragraph].append(text)
+            paragraphs_dict[lang] = [by_par.get(pid, []) for pid in par_ids]
+            sent_counter[lang] = total
+
+    meta_info = {
+        "items": {lang: helper.get_ltm_meta_for_lang(ltm_path, lang) for lang in langs},
+        "main_lang_code": langs[0],
+    }
+    return paragraphs_dict, par_ids, meta_info, sent_counter, verse_map
+
+
+def get_paragraphs_multi_as_pair(ltm_path, primary, support, par_amount=0):
+    """Project a ``.ltm`` to the legacy bilingual :func:`get_paragraphs` output
+    shape (keys ``"from"``/``"to"``) so existing 2-column consumers work for any
+    chosen pair. ``primary`` -> ``"from"``, ``support`` -> ``"to"``."""
+    paragraphs, par_ids, meta_info, sent_counter, verse_map = get_paragraphs_multi(
+        ltm_path, [primary, support], par_amount=par_amount
+    )
+    pair_paragraphs = {"from": paragraphs[primary], "to": paragraphs[support]}
+    pair_meta = {
+        "items": {
+            "from": meta_info["items"][primary],
+            "to": meta_info["items"][support],
+        },
+        "main_lang_code": "from",
+    }
+    pair_sent = {"from": sent_counter[primary], "to": sent_counter[support]}
+    return pair_paragraphs, par_ids, pair_meta, pair_sent, verse_map
+
+
 def get_paragraphs_polybook(db_paths, direction="to", par_amount=0):
     """Read all paragraphs with marks from database"""
     # default direction is 'to'
