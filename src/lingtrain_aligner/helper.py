@@ -650,10 +650,22 @@ def get_splitted_lenght(db_path):
     return len_from, len_to
 
 
+def _has_column(db, table, column):
+    """True if ``column`` exists on ``table`` (open connection ``db``)."""
+    return any(
+        c[1] == column for c in db.execute(f"PRAGMA table_info({table})").fetchall()
+    )
+
+
 def get_splitted_from_by_id(db_path, ids):
     """Get lines from splitted_from by ids"""
     res = []
     with sqlite3.connect(db_path) as db:
+        # Pre-7.4 alignment DBs lack the `verse` column. `coalesce` only rescues a
+        # NULL value, not a MISSING column, so select `verse` only when it exists
+        # and fall back to 0 (prose) otherwise. Keeps older artifacts readable
+        # without forcing a migration first. See migrate_document_db (schema 7.4).
+        verse_expr = "coalesce(f.verse, 0)" if _has_column(db, "splitted_from", "verse") else "0"
         for (
             id,
             text_from,
@@ -668,7 +680,7 @@ def get_splitted_from_by_id(db_path, ids):
             divider,
             verse,
         ) in db.execute(
-            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider, coalesce(f.verse, 0) from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
+            f'select f.id, f.text, f.proxy_text, f.exclude, f.paragraph, f.h1, f.h2, f.h3, f.h4, f.h5, f.divider, {verse_expr} from splitted_from f where f.id in ({",".join([str(x) for x in ids])})'
         ):
             res.append(
                 (
@@ -693,6 +705,9 @@ def get_splitted_to_by_id(db_path, ids):
     """Get lines from splitted_to by ids"""
     res = []
     with sqlite3.connect(db_path) as db:
+        # See get_splitted_from_by_id: select `verse` only when present so pre-7.4
+        # artifacts (no `verse` column) stay readable without a migration.
+        verse_expr = "coalesce(t.verse, 0)" if _has_column(db, "splitted_to", "verse") else "0"
         for (
             id,
             text_to,
@@ -707,7 +722,7 @@ def get_splitted_to_by_id(db_path, ids):
             divider,
             verse,
         ) in db.execute(
-            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider, coalesce(t.verse, 0) from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
+            f'select t.id, t.text, t.proxy_text, t.exclude, t.paragraph, t.h1, t.h2, t.h3, t.h4, t.h5, t.divider, {verse_expr} from splitted_to t where t.id in ({",".join([str(x) for x in ids])})'
         ):
             res.append(
                 (id, text_to, proxy_to, exclude, paragraph, h1, h2, h3, h4, h5, divider, verse)
