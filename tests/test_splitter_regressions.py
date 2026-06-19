@@ -151,6 +151,44 @@ def test_split_en_preserves_initials():
     assert sentences == ["J. K. Rowling wrote a book.", "It was popular."]
 
 
+def test_split_en_keeps_messrs_honorific():
+    """'Messrs.' (plural of Mr.) is an honorific, not a sentence boundary —
+    razdel splits after it. Regression for the Titanic 'built by Messrs. Harland
+    & Wolff' paragraph that desynced 1:1 alignment."""
+
+    sentences = splitter.split_by_sentences(
+        ["The ship was built by Messrs. Harland & Wolff in Belfast."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["The ship was built by Messrs. Harland & Wolff in Belfast."]
+
+
+def test_split_en_keeps_coordinate_refs_in_numeric_context():
+    """'Lat.'/'Long.' before a number are coordinate references, not sentence
+    boundaries — but only in numeric context (see the non-regression test for
+    the adverb 'long')."""
+
+    sentences = splitter.split_by_sentences(
+        ["She sank in Lat. 41 N. and Long. 50 W. that night."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["She sank in Lat. 41 N. and Long. 50 W. that night."]
+
+
+def test_split_en_still_splits_long_as_ordinary_word():
+    """The coordinate handling must NOT merge a sentence that merely ends in the
+    adverb 'long' / 'flat' — the digit-context guard keeps these splitting."""
+
+    sentences = splitter.split_by_sentences(
+        ["He did not wait long. Then he left."],
+        splitter.EN_CODE,
+    )
+
+    assert sentences == ["He did not wait long.", "Then he left."]
+
+
 def test_split_ru_keeps_figure_caption_with_number():
     """'Рис. N. <Caption>' must stay intact — razdel splits after 'Рис. 1.'
     because the number's trailing period looks like a sentence boundary."""

@@ -187,16 +187,28 @@ def _trailing_token_is_nonboundary(text, abbrevs):
     return False
 
 
-def _merge_abbrev_boundaries(sentences, abbrevs):
+def _merge_abbrev_boundaries(sentences, abbrevs, digit_abbrevs=frozenset()):
     """Merge consecutive razdel fragments when the earlier fragment ends with
-    a known non-boundary abbreviation, undoing razdel's false split."""
+    a known non-boundary abbreviation, undoing razdel's false split.
+
+    ``digit_abbrevs`` are abbreviations that are non-boundary ONLY when the next
+    fragment begins with a digit. They cover reference forms whose abbreviation
+    spelling collides with an ordinary word — "Long." (longitude) vs the adverb
+    "long", "Lat." (latitude) — so they merge only in a numeric context
+    ("...Long. 50° 14' W.") and a normal sentence ending in "long." is untouched.
+    """
     if not sentences:
         return sentences
     merged = []
     buffer = None
-    for s in sentences:
+    n = len(sentences)
+    for idx, s in enumerate(sentences):
         buffer = s if buffer is None else buffer + " " + s
         if _trailing_token_is_nonboundary(buffer, abbrevs):
+            continue
+        nxt = sentences[idx + 1] if idx + 1 < n else None
+        if (nxt is not None and nxt.lstrip()[:1].isdigit()
+                and _trailing_token_is_nonboundary(buffer, digit_abbrevs)):
             continue
         merged.append(buffer)
         buffer = None
@@ -215,7 +227,7 @@ _EN_NONBOUNDARY_ABBREVS = frozenset({
     "ch", "chap", "chaps", "sec", "secs", "par", "pars",
     "col", "cols", "ed", "eds", "ff", "cf", "ibid", "al", "et",
     # Titles and honorifics that razdel misses
-    "prof", "rev", "hon", "sr", "jr",
+    "prof", "rev", "hon", "sr", "jr", "messrs", "mssrs",
     "gen", "capt", "lt", "sgt", "cpl", "pvt",
     "pres", "gov", "sen", "rep", "atty", "supt",
     # Common abbreviations
@@ -230,14 +242,19 @@ _EN_NONBOUNDARY_ABBREVS = frozenset({
     "e.g", "i.e", "u.s", "u.k", "u.s.a",
 })
 
+# Reference abbreviations whose spelling collides with an ordinary English word,
+# so they are treated as non-boundary only in a numeric (coordinate) context —
+# "Lat. 41° 46' N.", "Long. 50° 14' W." — never for the adverb "long".
+_EN_COORD_ABBREVS = frozenset({"lat", "long"})
+
 
 def split_en(line):
     """Split English text using razdel, then merge false boundaries caused by
     razdel not recognizing common English abbreviations ('Fig.', 'p.', 'Vol.',
-    etc.)."""
+    'Messrs.', etc.) — plus coordinate refs ('Lat.'/'Long.') in numeric context."""
     line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
     raw = [x.text for x in razdel.sentenize(line)]
-    return _merge_abbrev_boundaries(raw, _EN_NONBOUNDARY_ABBREVS)
+    return _merge_abbrev_boundaries(raw, _EN_NONBOUNDARY_ABBREVS, _EN_COORD_ABBREVS)
 
 
 # --- Russian (and related Cyrillic) custom splitter ---
