@@ -233,6 +233,8 @@ _EN_NONBOUNDARY_ABBREVS = frozenset({
     # Common abbreviations
     "inc", "ltd", "corp", "dept", "univ", "assn", "co",
     "bros", "mt", "ave", "blvd", "rd", "ln", "apt", "ste", "bldg",
+    # Saint / Street — "St. Eustache", "Quartier St. Roch", "Rue St. Denis"
+    "st",
     # Months (when abbreviated mid-sentence)
     "jan", "feb", "mar", "apr", "jun", "jul",
     "aug", "sep", "sept", "oct", "nov", "dec",
