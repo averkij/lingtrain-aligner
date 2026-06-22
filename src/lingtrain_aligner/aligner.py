@@ -1972,13 +1972,15 @@ def trivial_alignment_multi(
     file_names=None,
     guids=None,
 ):
-    """Build a multilingual (.ltm) book from N structurally-parallel marked texts.
+    """Build an ``.ltm`` book from N>=1 structurally-parallel marked texts.
 
+    A single edition is a valid monolingual book; two or more make it parallel.
     Every edition is produced under full control (smart_translator), so all share
     the exact same paragraph structure and Lingtrain markup and the alignment is
     trivial: sentences line up 1:1:...:1 inside every paragraph. One ``source_lang``
     edition is the immutable structural reference (``is_source``); future
-    :func:`add_language` calls validate against the ``structure`` it defines.
+    :func:`add_language` calls validate against the ``structure`` it defines (and
+    turn a monolingual book into a parallel one without changing coordinates).
 
     Args:
         marked_paths_by_lang: ``{langcode: path}`` for every edition.
@@ -1999,13 +2001,13 @@ def trivial_alignment_multi(
     """
     if on_mismatch not in ("merge", "error"):
         raise ValueError("on_mismatch must be 'merge' or 'error'")
+    if not marked_paths_by_lang:
+        raise ValueError("need at least 1 edition to build a .ltm")
     if source_lang not in marked_paths_by_lang:
         raise ValueError(
             f"source_lang '{source_lang}' is not among the editions "
             f"{list(marked_paths_by_lang)}"
         )
-    if len(marked_paths_by_lang) < 2:
-        raise ValueError("trivial_alignment_multi needs at least 2 editions")
 
     # Ordered langs: source first, then the rest in input order.
     langs = [source_lang] + [l for l in marked_paths_by_lang if l != source_lang]
@@ -2234,6 +2236,12 @@ def trivial_alignment_multi(
         output_path,
     )
     return report
+
+
+# Neutral public name: an .ltm may hold one edition (a single marked text, a
+# monolingual book) or many. ``trivial_alignment_multi`` is kept as the original
+# alias; new callers should prefer ``build_ltm``.
+build_ltm = trivial_alignment_multi
 
 
 def add_language(

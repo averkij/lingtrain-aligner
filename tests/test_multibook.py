@@ -201,6 +201,73 @@ class TestBuildPerfect:
 
 
 # ---------------------------------------------------------------------------
+# Single edition: a .ltm may hold ONE edition (a monolingual book) and later
+# expand to a parallel one without changing the original coordinates.
+# ---------------------------------------------------------------------------
+
+
+class TestSingleEdition:
+    @pytest.fixture
+    def built(self, tmp_path):
+        path = _write(tmp_path / "usher.en.marked.txt", EN)
+        out = str(tmp_path / "usher.ltm")
+        # build_ltm is the neutral alias for trivial_alignment_multi.
+        report = aligner.build_ltm({"en": path}, out, source_lang="en", name="Usher")
+        return out, report, tmp_path
+
+    def test_report(self, built):
+        _, report, _ = built
+        assert report["status"] == "perfect"
+        assert report["format"] == "ltm"
+        assert report["langs"] == ["en"]
+        assert report["source_lang"] == "en"
+        assert report["paragraphs"] == 9
+        assert report["sentences_by_lang"] == {"en": 7}
+
+    def test_is_ltm_single_language(self, built):
+        out, _, _ = built
+        assert helper.is_ltm(out) is True
+        assert helper.get_ltm_lang_codes(out) == ["en"]
+        assert helper.get_ltm_source_lang(out) == "en"
+        langs = helper.get_ltm_languages(out)
+        assert langs[0]["is_source"] is True
+
+    def test_reader_reads_single_edition(self, built):
+        out, _, _ = built
+        paragraphs, par_ids, meta_info, sent_counter, verse_map = (
+            reader.get_paragraphs_multi(out)
+        )
+        assert set(paragraphs) == {"en"}
+        assert par_ids == [4, 5, 6, 7, 8, 9]
+        assert paragraphs["en"][0] == ["First sentence.", "Second sentence."]
+        assert sent_counter == {"en": 7}
+        assert meta_info["main_lang_code"] == "en"
+
+    def test_add_language_upgrades_to_parallel(self, built):
+        out, _, tmp_path = built
+        # Capture the source edition's coordinates before expansion.
+        with sqlite3.connect(out) as db:
+            before = db.execute(
+                "select paragraph, sentence, id, text from splitted "
+                "where lang='en' order by id"
+            ).fetchall()
+        ru = _write(tmp_path / "usher.ru.marked.txt", RU)
+        report = aligner.add_language(out, ru, "ru")
+        assert report["status"] == "ok"
+        assert helper.get_ltm_lang_codes(out) == ["en", "ru"]
+        with sqlite3.connect(out) as db:
+            after = db.execute(
+                "select paragraph, sentence, id, text from splitted "
+                "where lang='en' order by id"
+            ).fetchall()
+        # Existing (paragraph, sentence, id, text) rows are byte-identical.
+        assert after == before
+        paragraphs, _, _, _, _ = reader.get_paragraphs_multi(out)
+        assert set(paragraphs) == {"en", "ru"}
+        assert paragraphs["ru"][0] == ["Первое предложение.", "Второе предложение."]
+
+
+# ---------------------------------------------------------------------------
 # Reader
 # ---------------------------------------------------------------------------
 
@@ -413,11 +480,10 @@ class TestStructuralValidation:
         with pytest.raises(TrivialAlignmentError, match="Markup mismatch"):
             aligner.trivial_alignment_multi(paths, out, source_lang="en")
 
-    def test_source_lang_must_be_present(self, tmp_path):
-        paths = {"en": _write(tmp_path / "c.en.txt", ["A."])}
+    def test_zero_editions_rejected(self, tmp_path):
         out = str(tmp_path / "c.ltm")
-        with pytest.raises(ValueError, match="at least 2 editions"):
-            aligner.trivial_alignment_multi(paths, out, source_lang="en")
+        with pytest.raises(ValueError, match="at least 1 edition"):
+            aligner.trivial_alignment_multi({}, out, source_lang="en")
 
     def test_unknown_source_lang(self, tmp_path):
         paths = {
