@@ -259,6 +259,80 @@ def split_en(line):
     return _merge_abbrev_boundaries(raw, _EN_NONBOUNDARY_ABBREVS, _EN_COORD_ABBREVS)
 
 
+# --- Latin-script custom splitters (French / Italian / Dutch) ---
+# These languages have no dedicated splitter and previously fell back to bare
+# razdel, which has no knowledge of their abbreviations and so splits a sentence
+# after an honorific or reference followed by a capital — "Mme Dupont", "St.
+# Denis", "Sig. Rossi", "Dhr. De Vries". We give them the same razdel +
+# abbreviation post-merge treatment as English. Each set deliberately OMITS any
+# abbreviation that collides with an ordinary sentence-final word in that
+# language (e.g. French "vol"/"art"/"sept"/"sec"/"nos", Italian "no"/"col"),
+# which would otherwise swallow real sentence boundaries. Single-letter initials
+# ("M." Monsieur, "S." San) are already handled by razdel and need no entry.
+
+# French — honorifics, Saint(e), and reference abbreviations.
+_FR_NONBOUNDARY_ABBREVS = frozenset({
+    # Honorifics / titles
+    "mm", "mme", "mmes", "mlle", "mlles", "mgr", "me", "dr", "vve",
+    # Saint / Sainte ("St. Denis", "Ste. Anne", "Rue St. Honoré")
+    "st", "ste", "sts", "stes",
+    # Reference / citation
+    "cf", "p", "pp", "fig", "figs", "ill", "chap", "ms", "mss", "fol", "fasc",
+})
+
+
+def split_fr(line):
+    """Split French text using razdel, then merge false boundaries razdel
+    produces around French honorifics ('Mme', 'Mlle', 'MM.'), 'St.'/'Ste.' and
+    reference abbreviations ('p.', 'chap.', 'fig.')."""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
+    raw = [x.text for x in razdel.sentenize(line)]
+    return _merge_abbrev_boundaries(raw, _FR_NONBOUNDARY_ABBREVS)
+
+
+# Italian — honorifics ('Sig.'/'Sigg.'/'Dott.'), Saint(s), reference abbrevs.
+_IT_NONBOUNDARY_ABBREVS = frozenset({
+    # Honorifics / titles
+    "sig", "sigg", "sigra", "signa", "dott", "dr", "prof", "ing", "avv",
+    "rag", "geom", "mons", "on", "gen", "cav", "comm", "egr", "spett", "gent",
+    # Saint(s) — "S." is read as an initial by razdel; "SS."/"St." are not
+    "st", "ss",
+    # Reference / citation
+    "cfr", "pag", "pagg", "p", "pp", "fig", "figg", "art", "artt",
+    "n", "nn", "tav", "sec", "segg", "vol", "voll",
+})
+
+
+def split_it(line):
+    """Split Italian text using razdel, then merge false boundaries razdel
+    produces around Italian honorifics ('Sig.', 'Sigg.', 'Dott.') and reference
+    abbreviations ('pag.', 'art.', 'fig.')."""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
+    raw = [x.text for x in razdel.sentenize(line)]
+    return _merge_abbrev_boundaries(raw, _IT_NONBOUNDARY_ABBREVS)
+
+
+# Dutch — honorifics ('Dhr.'/'Mevr.'/'Dr.'), 'St.' (Sint), reference abbrevs.
+_NL_NONBOUNDARY_ABBREVS = frozenset({
+    # Honorifics / titles
+    "dhr", "mevr", "mw", "mej", "dr", "prof", "mr", "ir", "ing",
+    "ds", "drs", "jhr", "jkvr",
+    # Sint ("St. Nicolaas")
+    "st",
+    # Reference / citation
+    "nr", "nrs", "blz", "bldz", "dl", "fig", "p", "pp", "cf", "vgl", "hfdst", "pag",
+})
+
+
+def split_nl(line):
+    """Split Dutch text using razdel, then merge false boundaries razdel produces
+    around Dutch honorifics ('Dhr.', 'Mevr.', 'Dr.'), 'St.' (Sint) and reference
+    abbreviations ('nr.', 'blz.', 'fig.')."""
+    line = re.sub(sentence_end_before_dialogue_dash, r"\1 ", line)
+    raw = [x.text for x in razdel.sentenize(line)]
+    return _merge_abbrev_boundaries(raw, _NL_NONBOUNDARY_ABBREVS)
+
+
 # --- Russian (and related Cyrillic) custom splitter ---
 # Razdel already handles many Russian abbreviations (с., т., см., напр.,
 # etc.), but it still splits after caption prefixes like "Рис. 1.", "Табл. 3.",
@@ -492,6 +566,9 @@ splitter_fn = {
     KO_CODE: split_ko,
     DE_CODE: split_de,
     EN_CODE: split_en,
+    FR_CODE: split_fr,
+    IT_CODE: split_it,
+    NL_CODE: split_nl,
 }
 
 # Route Cyrillic-script languages to the Russian splitter (razdel + caption merge)

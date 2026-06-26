@@ -258,6 +258,63 @@ def test_split_ru_still_splits_plain_sentences():
     assert sentences == ["Дом стоял на холме.", "Ветер дул с моря."]
 
 
+def test_split_fr_keeps_honorifics_and_saint():
+    """French honorifics ('Mme', 'Mlle') and 'St.' (Saint) followed by a capital
+    must not terminate a sentence — French routes through razdel, which has no
+    French abbreviation knowledge."""
+
+    assert splitter.split_by_sentences(
+        ["Mme Dupont et Mlle Posh sont venues. Quelle joie."], splitter.FR_CODE
+    ) == ["Mme Dupont et Mlle Posh sont venues.", "Quelle joie."]
+
+    assert splitter.split_by_sentences(
+        ["Nous sommes allés à St. Pancras. Puis rentrés."], splitter.FR_CODE
+    ) == ["Nous sommes allés à St. Pancras.", "Puis rentrés."]
+
+
+def test_split_fr_still_splits_word_colliding_with_abbrev():
+    """The French set deliberately omits 'vol'/'art'/'sept' so a sentence merely
+    ending in those ordinary words still splits."""
+
+    assert splitter.split_by_sentences(
+        ["C’était un vol. Puis la police arriva."], splitter.FR_CODE
+    ) == ["C’était un vol.", "Puis la police arriva."]
+
+
+def test_split_it_keeps_honorifics():
+    """Italian honorifics ('Sig.', 'Dott.') followed by a capital must not
+    terminate a sentence."""
+
+    assert splitter.split_by_sentences(
+        ["Ho visto il Sig. Perkupp ieri. Era raggiante."], splitter.IT_CODE
+    ) == ["Ho visto il Sig. Perkupp ieri.", "Era raggiante."]
+
+    assert splitter.split_by_sentences(
+        ["Il Dott. Bianchi è arrivato. Tutti erano contenti."], splitter.IT_CODE
+    ) == ["Il Dott. Bianchi è arrivato.", "Tutti erano contenti."]
+
+
+def test_split_it_still_splits_plain_sentences():
+    """Ordinary Italian prose still splits on real boundaries."""
+
+    assert splitter.split_by_sentences(
+        ["La casa era sul colle. Il vento soffiava."], splitter.IT_CODE
+    ) == ["La casa era sul colle.", "Il vento soffiava."]
+
+
+def test_split_nl_keeps_honorifics_and_sint():
+    """Dutch honorifics ('Dhr.', 'Mevr.') and 'St.' (Sint) followed by a capital
+    must not terminate a sentence."""
+
+    assert splitter.split_by_sentences(
+        ["Dhr. De Vries en Mevr. Jansen kwamen. Leuk."], splitter.NL_CODE
+    ) == ["Dhr. De Vries en Mevr. Jansen kwamen.", "Leuk."]
+
+    assert splitter.split_by_sentences(
+        ["Op St. Nicolaas kreeg hij cadeaus. Hij was blij."], splitter.NL_CODE
+    ) == ["Op St. Nicolaas kreeg hij cadeaus.", "Hij was blij."]
+
+
 def test_split_zh_reattaches_trailing_closing_bracket():
     """A Chinese paragraph that ends a quotation with ``。」`` must NOT peel the
     lone ``」`` off as its own sentence — it re-attaches to the last sentence so
