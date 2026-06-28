@@ -156,9 +156,41 @@ def split_hy(text):
     return res
 
 
+# ASCII straight quotes (and the directional closers) that may trail a Korean
+# sentence terminator as a LONE peeled-off segment \u2014 e.g. a paragraph-final
+# speech printed ``\u2026\uc694."`` splits into ``\u2026\uc694.`` + a bogus lone ``"`` "sentence",
+# desynchronising 1:1 alignment. Korean dialogue conventionally uses ASCII
+# straight quotes, which are ambiguous (open vs close), so \u2014 unlike the
+# directional _CJK_CLOSERS re-attached by _reattach_leading_closers \u2014 we fold an
+# ASCII quote back ONLY when the whole segment is closer/quote chars (a dangling
+# closer never has text after it, whereas an OPENING quote always does, so this
+# can never mis-fold a sentence that merely starts with a quote).
+_KO_LONE_CLOSERS = _CJK_CLOSERS + "\"'"
+
+
+def _fold_lone_trailing_closers(res):
+    """Fold a segment consisting solely of closing-quote/bracket characters onto
+    the previous segment (the lone ``"`` peeled off a sentence-final ``\uc694.``)."""
+    out = []
+    for seg in res:
+        if out and seg.strip() and all(c in _KO_LONE_CLOSERS or c.isspace() for c in seg):
+            out[-1] = out[-1] + seg
+        else:
+            out.append(seg)
+    return out
+
+
 def split_ko(line):
-    """Split line in Korean (handles both full-width and half-width punctuation)"""
+    """Split line in Korean (handles both full-width and half-width punctuation).
+
+    Korean dialogue uses ASCII straight quotes, so a sentence-final ``."`` would
+    otherwise peel the closing ``"`` off as a bogus lone "sentence" (there is no
+    directional close-quote like ``\u300d`` to anchor on); _fold_lone_trailing_closers
+    re-attaches such a dangling closer so the count stays 1:1. Directional closers
+    written ``\u300c\u2026\u300d`` are handled by _reattach_leading_closers as for zh/jp."""
     res = list(re.findall(r"[^!?\u3002\uff01\uff1f\.\!\?]+[!?\u3002\uff01\uff1f\.\!\?]?", line, flags=re.U))
+    res = _reattach_leading_closers(res)
+    res = _fold_lone_trailing_closers(res)
     return [s for s in res if s.strip()]
 
 

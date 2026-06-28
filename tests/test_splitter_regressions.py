@@ -367,3 +367,32 @@ def test_split_jp_still_reattaches_corner_bracket():
         clean_text=False,
     )
     assert sentences == ["彼は言った。", "「そうだ。」", "次の文。"]
+
+
+def test_split_ko_folds_paragraph_final_lone_closing_quote():
+    """Korean dialogue uses ASCII straight quotes, so a paragraph-final speech
+    printed `...요."` must not peel the closing `"` off as a bogus lone sentence
+    (which would desync 1:1 alignment). The lone trailing closer folds back."""
+
+    sentences = splitter.split_by_sentences(
+        ['그가 말했다. 다 끝났다고 절 부려 주신답니다요."'],
+        splitter.KO_CODE,
+    )
+
+    # exactly two sentences — the closing `"` stays attached to `요."`, not a 3rd
+    assert len(sentences) == 2
+    assert sentences[-1].strip() == '다 끝났다고 절 부려 주신답니다요."'
+
+
+def test_split_ko_does_not_misfold_opening_quote():
+    """An OPENING ASCII quote is always followed by text, so it must stay with
+    its own sentence and never be folded onto the previous one."""
+
+    sentences = splitter.split_by_sentences(
+        ['그가 말했다. "안녕하세요. 잘 지내요?" 나는 웃었다.'],
+        splitter.KO_CODE,
+    )
+
+    assert len(sentences) == 4
+    assert sentences[0].strip() == '그가 말했다.'
+    assert sentences[1].strip() == '"안녕하세요.'
