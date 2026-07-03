@@ -396,3 +396,20 @@ def test_split_ko_does_not_misfold_opening_quote():
     assert len(sentences) == 4
     assert sentences[0].strip() == '그가 말했다.'
     assert sentences[1].strip() == '"안녕하세요.'
+
+
+def test_every_splittable_language_is_a_valid_code():
+    """Every language the splitter has specific support for must pass
+    is_lang_code_valid — otherwise callers that gate on it (e.g. alignment
+    import) coerce real language codes to the generic XX_CODE ("xx" was never
+    Khakas or any concrete language; it is the "Unknown/General" fallback)."""
+
+    for code in splitter.CYRILLIC_LANG_CODES:
+        assert splitter.is_lang_code_valid(code), code
+    for code in splitter.splitter_fn:
+        assert splitter.is_lang_code_valid(code), code
+
+
+def test_xx_stays_the_generic_unknown_code():
+    assert splitter.XX_CODE == "xx"
+    assert splitter.LANGUAGES["xx"]["name"] == "Unknown"

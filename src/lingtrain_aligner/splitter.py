@@ -55,6 +55,29 @@ LANGUAGES = {
     CV_CODE: {"name": "Chuvash"},
     HY_CODE: {"name": "Armenian"},
     XX_CODE: {"name": "Unknown"},
+    # Cyrillic-script languages split via razdel (see CYRILLIC_LANG_CODES).
+    # Listed here so is_lang_code_valid() accepts them and callers stop
+    # coercing real language codes to the generic XX_CODE.
+    "tt": {"name": "Tatar"},
+    "kk": {"name": "Kazakh"},
+    "ky": {"name": "Kyrgyz"},
+    "uz": {"name": "Uzbek"},
+    "sah": {"name": "Yakut"},
+    "kv": {"name": "Komi"},
+    "udm": {"name": "Udmurt"},
+    "mhr": {"name": "Meadow Mari"},
+    "mrj": {"name": "Hill Mari"},
+    "myv": {"name": "Erzya"},
+    "mdf": {"name": "Moksha"},
+    "os": {"name": "Ossetian"},
+    "inh": {"name": "Ingush"},
+    "bua": {"name": "Buryat"},
+    "xal": {"name": "Kalmyk"},
+    "sr": {"name": "Serbian"},
+    "bg": {"name": "Bulgarian"},
+    "mn": {"name": "Mongolian"},
+    "alt": {"name": "Altai"},
+    "kjh": {"name": "Khakas"},
 }
 
 
