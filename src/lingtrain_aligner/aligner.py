@@ -59,14 +59,46 @@ def get_line_vectors(
         )
 
 
-def _openrouter_embed_chunk(lines, model, headers, url, timeout=120):
-    """Send a single batch request to OpenRouter. Returns list of embeddings or None on failure."""
+def _openrouter_proxy_url():
+    """Return the optional explicit proxy for OpenRouter embedding calls."""
+    proxy_url = os.getenv("OPENROUTER_PROXY_URL")
+    if proxy_url:
+        proxy_url = proxy_url.strip()
+    return proxy_url or None
+
+
+def _openrouter_post_json(url, headers, payload, timeout=120, proxy_url=None):
+    """POST JSON to OpenRouter, optionally through an explicit forward proxy."""
     import requests
 
-    resp = requests.post(
-        url, headers=headers,
-        json={"model": model, "input": lines},
+    if proxy_url:
+        proxies = {"http": proxy_url, "https": proxy_url}
+        with requests.Session() as session:
+            session.trust_env = False
+            return session.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+                proxies=proxies,
+            )
+
+    return requests.post(
+        url,
+        headers=headers,
+        json=payload,
         timeout=timeout,
+    )
+
+
+def _openrouter_embed_chunk(lines, model, headers, url, timeout=120, proxy_url=None):
+    """Send a single batch request to OpenRouter. Returns list of embeddings or None on failure."""
+    resp = _openrouter_post_json(
+        url,
+        headers=headers,
+        payload={"model": model, "input": lines},
+        timeout=timeout,
+        proxy_url=proxy_url,
     )
     data = resp.json()
     if "data" in data and len(data["data"]) == len(lines):
@@ -77,13 +109,14 @@ def _openrouter_embed_chunk(lines, model, headers, url, timeout=120):
     return None
 
 
-def _openrouter_embed_batched(lines, model, api_key):
+def _openrouter_embed_batched(lines, model, api_key, proxy_url=None):
     """Call OpenRouter embeddings API with tiered fallback: 300 -> 50 -> 1."""
     url = "https://openrouter.ai/api/v1/embeddings"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    proxy_url = proxy_url if proxy_url is not None else _openrouter_proxy_url()
     batch_tiers = [300, 50, 1]
     all_embeddings = []
     remaining = list(lines)
@@ -97,7 +130,9 @@ def _openrouter_embed_batched(lines, model, api_key):
         failed = []
         for chunk_idx in range(0, len(remaining), tier):
             chunk = remaining[chunk_idx : chunk_idx + tier]
-            result = _openrouter_embed_chunk(chunk, model, headers, url)
+            result = _openrouter_embed_chunk(
+                chunk, model, headers, url, proxy_url=proxy_url
+            )
             if result is not None:
                 all_embeddings.extend(result)
             else:
