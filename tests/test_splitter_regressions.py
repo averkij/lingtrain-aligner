@@ -1,6 +1,69 @@
 """Regression tests for splitter language-specific postprocessing."""
 
-from lingtrain_aligner import splitter
+from lingtrain_aligner import aligner, preprocessor, splitter
+
+
+def _split_saved(tmp_path, text, *, preserve=False):
+    raw_path = tmp_path / "raw.txt"
+    splitted_path = tmp_path / "split.txt"
+    raw_path.write_text(text, encoding="utf-8")
+    splitter.split_by_sentences_and_save(
+        raw_path,
+        splitted_path,
+        splitter.EN_CODE,
+        handle_marks=True,
+        preserve_blank_line_paragraphs=preserve,
+    )
+    return splitted_path.read_text(encoding="utf-8").splitlines()
+
+
+def test_blank_line_paragraphs_are_opt_in(tmp_path):
+    text = "First block without punctuation\n\nSecond block without punctuation"
+
+    assert _split_saved(tmp_path, text) == [
+        "First block without punctuation Second block without punctuation"
+    ]
+    assert _split_saved(tmp_path, text, preserve=True) == [
+        "First block without punctuation%%%%%",
+        "Second block without punctuation",
+    ]
+
+
+def test_preserved_blank_line_paragraphs_accept_multiple_whitespace_lines(tmp_path):
+    text = "First block\n \t\n\nSecond block"
+
+    assert _split_saved(tmp_path, text, preserve=True) == [
+        "First block%%%%%",
+        "Second block",
+    ]
+
+
+def test_preserved_blank_line_boundary_does_not_add_punctuation(tmp_path):
+    lines = _split_saved(tmp_path, "First block\n\nFinal block", preserve=True)
+
+    assert lines == ["First block%%%%%", "Final block"]
+    parsed = preprocessor.parse_marked_line(lines[0])
+    assert parsed["text"] == "First block"
+    assert parsed["pa"] is True
+
+    marks = []
+    preprocessor.extract_marks(marks, lines[0], 0)
+    assert marks == []
+
+    ingested, _, _ = aligner.handle_marks(lines)
+    assert ingested == [
+        ("First block", (0, 0, 0, 0, 0, 0, 0, 0)),
+        ("Final block", (1, 0, 0, 0, 0, 0, 0, 0)),
+    ]
+
+
+def test_preserve_option_keeps_legacy_punctuated_markers(tmp_path):
+    text = "First sentence.\nSecond sentence."
+
+    assert _split_saved(tmp_path, text, preserve=True) == [
+        "First sentence%%%%%.",
+        "Second sentence%%%%%.",
+    ]
 
 
 def test_split_by_sentences_applies_french_postprocessing(monkeypatch):

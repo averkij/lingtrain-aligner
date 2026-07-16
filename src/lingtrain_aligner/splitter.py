@@ -538,6 +538,7 @@ def preprocess(line, re_list, splitter, after_fn):
 def ensure_paragraph_splitting(lines):
     """Split line by the paragraph marks if splitter failed"""
     line_endings = [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
+    line_endings.append(preprocessor.PARAGRAPH_MARK)
     res = []
     for line in lines:
         ser = []
@@ -667,7 +668,12 @@ def split_by_sentences(lines, langcode, clean_text=True):
 
 
 def split_by_sentences_and_save(
-    raw_path, splitted_path, langcode, handle_marks=False, clean_text=True
+    raw_path,
+    splitted_path,
+    langcode,
+    handle_marks=False,
+    clean_text=True,
+    preserve_blank_line_paragraphs=False,
 ):
     """Split raw text file by sentences and save"""
     with open(raw_path, mode="r", encoding="utf-8") as input_file, open(
@@ -681,7 +687,10 @@ def split_by_sentences_and_save(
             langcode = XX_CODE
         lines = input_file.readlines()
         if handle_marks:
-            lines = preprocessor.mark_paragraphs(lines)
+            lines = preprocessor.mark_paragraphs(
+                lines,
+                preserve_blank_line_paragraphs=preserve_blank_line_paragraphs,
+            )
             sentences = split_by_sentences_wrapper(lines, langcode, clean_text)
         else:
             sentences = split_by_sentences(lines, langcode, clean_text)

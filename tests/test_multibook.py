@@ -268,6 +268,189 @@ class TestSingleEdition:
 
 
 # ---------------------------------------------------------------------------
+# Single edition built from the editable prepared/splitted artifact
+# ---------------------------------------------------------------------------
+
+
+PREPARED = [
+    "Source title%%%%%title.",
+    "Source author%%%%%author.",
+    "Chapter One%%%%%h2.",
+    "Edited first sentence.",
+    "Kept second sentence%%%%%.",
+    "Joined after a deleted boundary.",
+    "Still the same paragraph%%%%%!",
+    "First surviving verse line%%%%%verse.",
+    "Second surviving verse line%%%%%verse.",
+    "A section break%%%%%h3.",
+    "Third surviving verse line%%%%%verse.",
+]
+
+
+class TestBuildLtmFromPrepared:
+    def _build(self, tmp_path, lines=PREPARED, name="Canonical title"):
+        prepared = _write(tmp_path / "edited-preview.txt", lines)
+        out = str(tmp_path / "prepared.ltm")
+        report = aligner.build_ltm_from_prepared(
+            prepared,
+            out,
+            source_lang="en",
+            name=name,
+            file_name="uploaded-source.txt",
+            guid="document-guid",
+        )
+        return out, report
+
+    def test_uses_prepared_sentences_and_retained_paragraph_boundaries(self, tmp_path):
+        out, report = self._build(tmp_path)
+        assert report["sentences_by_lang"] == {"en": 7}
+        structure = helper.get_ltm_structure(out)
+        assert [(row["kind"], row["sentence_count"]) for row in structure] == [
+            ("h2", 0),
+            ("text", 2),
+            ("text", 2),
+            ("verse", 1),
+            ("verse", 1),
+            ("h3", 0),
+            ("verse", 1),
+        ]
+        with sqlite3.connect(out) as db:
+            prose = db.execute(
+                "select text from splitted where lang='en' and paragraph=2 order by sentence"
+            ).fetchall()
+            joined = db.execute(
+                "select text from splitted where lang='en' and paragraph=3 order by sentence"
+            ).fetchall()
+        assert prose == [("Edited first sentence.",), ("Kept second sentence.",)]
+        assert joined == [
+            ("Joined after a deleted boundary.",),
+            ("Still the same paragraph!",),
+        ]
+        assert all("%%%%%" not in row[0] for row in prose + joined)
+
+    def test_replaces_title_preserves_marks_and_collapses_verse_runs(self, tmp_path):
+        out, _ = self._build(tmp_path)
+        meta = helper.get_ltm_meta_for_lang(out, "en")
+        assert [(row[0], row[2]) for row in meta["title"]] == [("Canonical title", 0)]
+        assert [(row[0], row[2]) for row in meta["author"]] == [("Source author", 0)]
+        assert [(row[0], row[2]) for row in meta["h2"]] == [("Chapter One", 1)]
+        assert [(row[0], row[2]) for row in meta["h3"]] == [("A section break", 6)]
+        with sqlite3.connect(out) as db:
+            verses = db.execute(
+                "select paragraph, text, verse from splitted where verse > 0 order by id"
+            ).fetchall()
+        assert verses == [
+            (4, "First surviving verse line", 1),
+            (5, "Second surviving verse line", 1),
+            (7, "Third surviving verse line", 2),
+        ]
+
+    def test_inserts_canonical_title_when_source_has_none(self, tmp_path):
+        out, _ = self._build(
+            tmp_path,
+            ["Author%%%%%author.", "Only edited sentence.%%%%%."],
+            name="Inserted title",
+        )
+        meta = helper.get_ltm_meta_for_lang(out, "en")
+        assert [(row[0], row[2]) for row in meta["title"]] == [("Inserted title", 0)]
+
+    def test_strips_bare_paragraph_marker_after_unpunctuated_text(self, tmp_path):
+        out, _ = self._build(
+            tmp_path,
+            ["First line without punctuation%%%%%", "Second paragraph%%%%%."],
+        )
+        with sqlite3.connect(out) as db:
+            rows = db.execute(
+                "select paragraph, text from splitted order by id"
+            ).fetchall()
+        assert rows == [(1, "First line without punctuation"), (2, "Second paragraph.")]
+
+    def test_classifies_marks_wrapped_by_a_retained_paragraph_boundary(self, tmp_path):
+        out, _ = self._build(
+            tmp_path,
+            [
+                "Source title%%%%%title.%%%%%",
+                "Source author%%%%%author.%%%%%",
+                "Chapter One%%%%%h2.%%%%%",
+                "A verse line%%%%%verse.%%%%%",
+                "Body sentence%%%%%.",
+            ],
+            name="Canonical wrapped title",
+        )
+        with sqlite3.connect(out) as db:
+            meta = db.execute(
+                "select key, val from meta order by id"
+            ).fetchall()
+            structure = db.execute(
+                "select kind, sentence_count, verse from structure order by paragraph"
+            ).fetchall()
+            sentence_texts = [
+                row[0] for row in db.execute("select text from splitted order by id")
+            ]
+
+        assert meta == [
+            ("title", "Canonical wrapped title"),
+            ("author", "Source author"),
+            ("h2", "Chapter One"),
+        ]
+        assert structure == [("h2", 0, 0), ("verse", 1, 1), ("text", 1, 0)]
+        assert sentence_texts == ["A verse line", "Body sentence."]
+        assert all("%%%%%" not in text for text in sentence_texts)
+
+    def test_records_provenance_content_version_and_distinct_history(self, tmp_path):
+        out, _ = self._build(tmp_path)
+        with sqlite3.connect(out) as db:
+            assert db.execute(
+                "select lang, name, guid from files"
+            ).fetchone() == ("en", "uploaded-source.txt", "document-guid")
+            assert db.execute(
+                "select val from info where key='source_lang'"
+            ).fetchone()[0] == "en"
+            assert db.execute(
+                "select val from info where key='app_content_version'"
+            ).fetchone()[0] == "1"
+            assert db.execute(
+                "select operation from history"
+            ).fetchone()[0] == constants.OPERATION_BUILD_LTM_FROM_PREPARED
+
+    def test_rejects_empty_or_metadata_only_prepared_input(self, tmp_path):
+        empty = _write(tmp_path / "empty.txt", [])
+        with pytest.raises(ValueError, match="no readable content"):
+            aligner.build_ltm_from_prepared(
+                empty, str(tmp_path / "empty.ltm"), source_lang="en", name="Book"
+            )
+
+        metadata_only = _write(tmp_path / "meta.txt", ["Title%%%%%title."])
+        with pytest.raises(ValueError, match="no readable body content"):
+            aligner.build_ltm_from_prepared(
+                metadata_only,
+                str(tmp_path / "meta.ltm"),
+                source_lang="en",
+                name="Book",
+            )
+
+    def test_output_remains_compatible_with_add_language(self, tmp_path):
+        out, _ = self._build(tmp_path)
+        translation = _write(
+            tmp_path / "translation.de.txt",
+            [
+                "Deutscher Titel%%%%%title.",
+                "Autor%%%%%author.",
+                "Kapitel eins%%%%%h2.",
+                "Bearbeiteter erster Satz. Zweiter Satz.",
+                "Nach einer gelöschten Grenze. Noch derselbe Absatz!",
+                "Erste Verszeile%%%%%verse.",
+                "Zweite Verszeile%%%%%verse.",
+                "Abschnitt%%%%%h3.",
+                "Dritte Verszeile%%%%%verse.",
+            ],
+        )
+        report = aligner.add_language(out, translation, "de")
+        assert report["status"] == "ok"
+        assert helper.get_ltm_lang_codes(out) == ["en", "de"]
+
+
+# ---------------------------------------------------------------------------
 # Reader
 # ---------------------------------------------------------------------------
 

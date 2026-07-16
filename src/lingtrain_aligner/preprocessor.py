@@ -199,22 +199,46 @@ def is_date(line):
     return False if not res else True
 
 
-def mark_paragraphs(lines):
+def mark_paragraphs(lines, preserve_blank_line_paragraphs=False):
+    """Mark physical paragraph boundaries before sentence splitting.
+
+    Punctuated lines retain the legacy marker inserted before their final
+    character.  When ``preserve_blank_line_paragraphs`` is enabled, an
+    unpunctuated non-empty line immediately followed by a blank/whitespace-only
+    line receives a bare trailing marker instead.  The bare form records the
+    boundary without manufacturing punctuation that was not present in the
+    source text.
+    """
     line_endings = tuple([x for x in LINE_ENDINGS])
     for i, line in enumerate(lines):
         line = line.strip()
         if line.endswith(line_endings):
             lines[i] = line[:-1] + PARAGRAPH_MARK + line[-1]
+        elif (
+            preserve_blank_line_paragraphs
+            and line
+            and i + 1 < len(lines)
+            and not lines[i + 1].strip()
+        ):
+            lines[i] = line + PARAGRAPH_MARK
     return lines
+
+
+def strip_paragraph_mark(line):
+    """Return ``(text, marked)`` after removing a terminal paragraph marker."""
+    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
+    if line.endswith(p_ending):
+        return "".join(line.rsplit(PARAGRAPH_MARK, 1)), True
+    if line.endswith(PARAGRAPH_MARK):
+        return line[: -len(PARAGRAPH_MARK)], True
+    return line, False
 
 
 def parse_marked_line(line):
     """Parse marked line for UI view"""
     res = defaultdict(bool)
-    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
-    if line.endswith(p_ending):
-        # remove last occurence of PARAGRAPH_MARK
-        line = "".join(line.rsplit(PARAGRAPH_MARK, 1))
+    line, is_paragraph = strip_paragraph_mark(line)
+    if is_paragraph:
         res["pa"] = True
     for mark in MARK_META:
         ending = f"{PARAGRAPH_MARK}{mark}."
@@ -228,10 +252,7 @@ def parse_marked_line(line):
 
 def extract_marks(res, line, ix):
     """Extract marks information in exists"""
-    p_ending = tuple([PARAGRAPH_MARK + x for x in LINE_ENDINGS])
-    if line.endswith(p_ending):
-        # remove last occurence of PARAGRAPH_MARK
-        line = "".join(line.rsplit(PARAGRAPH_MARK, 1))
+    line, _ = strip_paragraph_mark(line)
     # MARK_META_EXTRACT (not MARK_META): a `verse` line is body content stored as
     # an aligned row, never lifted into the meta table.
     for mark in MARK_META_EXTRACT:

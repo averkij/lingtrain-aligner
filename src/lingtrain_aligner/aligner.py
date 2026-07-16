@@ -2279,6 +2279,211 @@ def trivial_alignment_multi(
 build_ltm = trivial_alignment_multi
 
 
+def build_ltm_from_prepared(
+    prepared_path,
+    output_path,
+    *,
+    source_lang,
+    name,
+    file_name=None,
+    guid=None,
+):
+    """Build a single-edition ``.ltm`` from an already prepared document.
+
+    ``prepared_path`` is the editable ``splitted`` artifact produced by
+    :func:`splitter.split_by_sentences_and_save`. Its physical lines are already
+    sentence units and are therefore copied directly instead of being split a
+    second time. Retained ``%%%%%`` paragraph endings group prose lines into the
+    shared structure; deleting one of those endings in the preview intentionally
+    joins the surrounding sentence groups.
+
+    Empty lines are not present in prepared artifacts, so lost gaps inside verse
+    cannot be reconstructed. Every consecutive run of surviving ``verse`` lines
+    is stored as one stanza.
+    """
+    canonical_name = str(name or "").strip()
+    if not canonical_name:
+        raise ValueError("Book name must not be empty")
+    if not source_lang or not str(source_lang).strip():
+        raise ValueError("Source language must not be empty")
+    if not os.path.isfile(prepared_path):
+        raise FileNotFoundError(prepared_path)
+
+    with open(prepared_path, mode="r", encoding="utf-8") as prepared:
+        raw_lines = [line.strip() for line in prepared if line.strip()]
+    if not raw_lines:
+        raise ValueError("Prepared document has no readable content")
+
+    structure = []  # (paragraph, kind, sentence_count, verse)
+    splitted_rows = []  # (lang, paragraph, sentence, id, text, verse)
+    meta_rows = []  # (lang, key, val, occurrence, par_id)
+    meta_occurrences = defaultdict(int)
+    pending_prose = []
+    paragraph = 0
+    sentence_id = 0
+    stanza = 0
+    previous_was_verse = False
+    title_seen = False
+
+    def add_meta(key, value, par_id):
+        nonlocal title_seen
+        if key == preprocessor.TITLE:
+            if title_seen:
+                return
+            value = canonical_name
+            title_seen = True
+        occurrence = meta_occurrences[key]
+        meta_occurrences[key] += 1
+        meta_rows.append(
+            (source_lang, key, value, occurrence, par_id)
+        )
+
+    def flush_prose():
+        nonlocal paragraph, sentence_id, pending_prose
+        if not pending_prose:
+            return
+        paragraph += 1
+        structure.append((paragraph, "text", len(pending_prose), 0))
+        for sentence, text in enumerate(pending_prose, start=1):
+            sentence_id += 1
+            splitted_rows.append(
+                (source_lang, paragraph, sentence, sentence_id, text, 0)
+            )
+        pending_prose = []
+
+    for raw_line in raw_lines:
+        mark = _detect_meta_mark(raw_line)
+        paragraph_end = False
+        text = raw_line
+        if mark is None:
+            # Edited prepared artifacts can retain a paragraph boundary after a
+            # structural marker (for example ``Chapter%%%%%h2.%%%%%``). Strip
+            # that outer boundary first, then classify the remaining marker so
+            # it cannot leak into ``splitted.text`` as ordinary reader prose.
+            text, paragraph_end = preprocessor.strip_paragraph_mark(raw_line)
+            text = text.strip()
+            mark = _detect_meta_mark(text)
+            if mark is not None:
+                raw_line = text
+        if mark is not None:
+            flush_prose()
+            value = get_mark_value(raw_line, mark).strip()
+            if mark in META_SIDE_MARKS:
+                add_meta(mark, value, paragraph)
+                previous_was_verse = False
+                continue
+
+            paragraph += 1
+            if mark == preprocessor.VERSE:
+                if not previous_was_verse:
+                    stanza += 1
+                sentence_id += 1
+                structure.append((paragraph, preprocessor.VERSE, 1, stanza))
+                splitted_rows.append(
+                    (source_lang, paragraph, 1, sentence_id, value, stanza)
+                )
+                previous_was_verse = True
+                continue
+
+            # Headings, dividers, quotes and images are positional metadata.
+            # Their zero-sentence structure row preserves that position for the
+            # reader and for a later add_language compatibility check.
+            structure.append((paragraph, mark, 0, 0))
+            add_meta(mark, value, paragraph)
+            previous_was_verse = False
+            continue
+
+        previous_was_verse = False
+        if preprocessor.PARAGRAPH_MARK in text:
+            raise ValueError(
+                "Prepared document contains a Lingtrain marker in an unsupported position"
+            )
+        if text:
+            pending_prose.append(text)
+        if paragraph_end:
+            flush_prose()
+
+    flush_prose()
+    if not splitted_rows:
+        raise ValueError("Prepared document has no readable body content")
+    if not title_seen:
+        # The submitted name is canonical for both the application row and the
+        # embedded source edition, even when the uploaded document had no title.
+        meta_rows.insert(0, (source_lang, preprocessor.TITLE, canonical_name, 0, 0))
+
+    if os.path.isfile(output_path):
+        gc.collect()
+    helper.init_multi_db(output_path)
+    now = helper._utc_now_iso()
+    db = sqlite3.connect(output_path)
+    try:
+        db.execute(
+            "insert into languages(lang, ord, is_source, added_at) values (?,?,?,?)",
+            (source_lang, 0, 1, now),
+        )
+        db.executemany(
+            "insert into structure(paragraph, kind, sentence_count, verse) values (?,?,?,?)",
+            structure,
+        )
+        db.executemany(
+            "insert into splitted(lang, paragraph, sentence, id, text, verse) "
+            "values (?,?,?,?,?,?)",
+            splitted_rows,
+        )
+        db.executemany(
+            "insert into meta(lang, key, val, occurence, par_id) values (?,?,?,?,?)",
+            meta_rows,
+        )
+        db.execute(
+            "insert into files(lang, name, guid, added_at) values (?,?,?,?)",
+            (
+                source_lang,
+                file_name or os.path.basename(prepared_path),
+                guid or uuid.uuid4().hex,
+                now,
+            ),
+        )
+        helper.set_info_value_conn(db, helper.INFO_KEY_SOURCE_LANG, source_lang)
+        helper.set_info_value_conn(db, helper.INFO_KEY_NAME, canonical_name)
+        db.execute(
+            "insert into history(operation, lang, insert_ts, parameters) values (?,?,?,?)",
+            (
+                con.OPERATION_BUILD_LTM_FROM_PREPARED,
+                source_lang,
+                now,
+                json.dumps(
+                    {
+                        "source": "prepared_document",
+                        "file_name": file_name or os.path.basename(prepared_path),
+                        "guid": guid,
+                    }
+                ),
+            ),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    return {
+        "output": output_path,
+        "format": "ltm",
+        "langs": [source_lang],
+        "source_lang": source_lang,
+        "paragraphs": len(structure),
+        "sentences_by_lang": {source_lang: len(splitted_rows)},
+        "structural_marks": sum(
+            1 for row in structure if row[1] in preprocessor.MARK_COUNTERS
+        ),
+        "verse_lines": sum(
+            1 for row in structure if row[1] == preprocessor.VERSE
+        ),
+        "status": "perfect",
+    }
+
+
 def add_language(
     ltm_path,
     marked_path,
@@ -2517,9 +2722,6 @@ def handle_marks(lines):
     meta = defaultdict(list)
     meta_par_ids = defaultdict(list)
     marks = (0, 0, 0, 0, 0, 0, 0, 0)
-    p_ending = tuple(
-        [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
-    )
     verse_ending = f"{preprocessor.PARAGRAPH_MARK}{preprocessor.VERSE}."
     stanza = 0
     prev_was_verse = False
@@ -2535,10 +2737,7 @@ def handle_marks(lines):
                 pending_break = True
             continue
 
-        if line.endswith(p_ending):
-            # remove last occurence of PARAGRAPH_MARK
-            line = "".join(line.rsplit(preprocessor.PARAGRAPH_MARK, 1))
-            next_par = True
+        line, next_par = preprocessor.strip_paragraph_mark(line)
 
         # Verse line: strip the mark, treat as a one-unit content paragraph and
         # assign its poem stanza index.
