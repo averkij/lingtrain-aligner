@@ -66,6 +66,67 @@ def test_preserve_option_keeps_legacy_punctuated_markers(tmp_path):
     ]
 
 
+def test_paragraph_marker_survives_closing_quote_after_terminator(tmp_path):
+    """A paragraph whose text ends with a closing quote/bracket that itself
+    follows a sentence terminator ('… se termine. »') must keep its paragraph
+    boundary.
+
+    ``mark_paragraphs`` inserts the ``%%%%%`` marker before the trailing ``»``,
+    producing ``… se termine. %%%%%»``. The splitter then treats the earlier
+    ``.`` as the real boundary and emits ``%%%%%»`` at the HEAD of the next
+    segment, where it has no text of its own and used to be dropped — collapsing
+    every French-quotes paragraph into a single one. Regression for the
+    'Не объединять абзацы' upload bug on guillemet-punctuated text (reproduced
+    with EN routing, so the fix must not depend on the French post-pass)."""
+    text = (
+        "Le premier bloc se termine. »\n\n"
+        "« Le deuxième bloc arrive. Encore le deuxième. »\n\n"
+        "« Le dernier bloc finit ici. »."
+    )
+
+    lines = _split_saved(tmp_path, text, preserve=True)
+
+    assert lines == [
+        "Le premier bloc se termine.%%%%%»",
+        "« Le deuxième bloc arrive.",
+        "Encore le deuxième.%%%%%»",
+        "« Le dernier bloc finit ici. »%%%%%.",
+    ]
+    # Three source paragraphs -> exactly three paragraph-terminated lines.
+    para_terminated = [l for l in lines if preprocessor.strip_paragraph_mark(l)[1]]
+    assert len(para_terminated) == 3
+
+
+def test_ensure_paragraph_splitting_reattaches_orphan_marker():
+    """A paragraph marker pushed to the head of a segment folds back onto the
+    previous segment instead of being discarded."""
+    mark = preprocessor.PARAGRAPH_MARK
+
+    sentences = [
+        "First paragraph ends here.",
+        f"{mark}» Second paragraph starts.",
+        f"Second continues here.{mark}»",
+    ]
+
+    assert splitter.ensure_paragraph_splitting(sentences) == [
+        f"First paragraph ends here.{mark}»",
+        "Second paragraph starts.",
+        f"Second continues here.{mark}»",
+    ]
+
+
+def test_ensure_paragraph_splitting_keeps_leading_orphan_without_previous():
+    """A leading orphan marker with no previous segment to receive it must not
+    crash and must not resurrect an empty paragraph — the homeless marker is
+    dropped and only the real content survives."""
+    mark = preprocessor.PARAGRAPH_MARK
+
+    result = splitter.ensure_paragraph_splitting([f"{mark}» Only segment here."])
+
+    assert [r.strip() for r in result] == ["Only segment here."]
+    assert not any(preprocessor.strip_paragraph_mark(r)[1] for r in result)
+
+
 def test_split_by_sentences_applies_french_postprocessing(monkeypatch):
     """French postprocessing should reattach a leading closing guillemet."""
 

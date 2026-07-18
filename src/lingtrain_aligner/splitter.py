@@ -535,10 +535,47 @@ def preprocess(line, re_list, splitter, after_fn):
     return after_fn(splitted)
 
 
+def _reattach_orphan_paragraph_marks(sentences):
+    """Fold a paragraph marker that the sentence splitter pushed to the HEAD of a
+    segment back onto the end of the previous segment.
+
+    ``preprocessor.mark_paragraphs`` records a paragraph boundary by inserting
+    ``%%%%%`` before a line's final character. When that final character is a
+    closing quote/bracket that itself follows a real sentence terminator
+    (French ``… Votre révérence. »`` → ``… Votre révérence. %%%%%»``), the
+    splitter treats the earlier ``.`` as the sentence boundary and emits the
+    ``%%%%%»`` fragment at the START of the next segment. There it has no text of
+    its own, so ``get_substrings`` would discard it and the paragraph boundary
+    would be lost — collapsing every such paragraph into its neighbour. We move
+    the leading marker (``%%%%%`` plus an optional single trailing line-ending
+    glyph) back onto the previous segment so the boundary survives for every
+    language, not only those with a bespoke post-pass such as ``after_fr``.
+    """
+    marker = preprocessor.PARAGRAPH_MARK
+    endings = tuple(preprocessor.LINE_ENDINGS)
+    out = []
+    for seg in sentences:
+        stripped = seg.lstrip()
+        if out and stripped.startswith(marker):
+            rest = stripped[len(marker):]
+            token = marker
+            if rest and rest[0] in endings:
+                token += rest[0]
+                rest = rest[1:]
+            out[-1] = out[-1] + token
+            rest = rest.lstrip()
+            if rest:
+                out.append(rest)
+        else:
+            out.append(seg)
+    return out
+
+
 def ensure_paragraph_splitting(lines):
     """Split line by the paragraph marks if splitter failed"""
     line_endings = [preprocessor.PARAGRAPH_MARK + x for x in preprocessor.LINE_ENDINGS]
     line_endings.append(preprocessor.PARAGRAPH_MARK)
+    lines = _reattach_orphan_paragraph_marks(lines)
     res = []
     for line in lines:
         ser = []
